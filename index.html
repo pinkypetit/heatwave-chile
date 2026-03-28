@@ -1176,22 +1176,23 @@ function buildPanelBody(props) {
   const rp1   = fmtRP(props[sc + 'rp_2yr']);
   const rp5   = fmtRP(props[sc + 'rp_5yr']);
   const rp10  = fmtRP(props[sc + 'rp_10yr']);
-  const mult  = props[sc + 'return_period_multiplier'];
-  const multStr = (mult != null && !isNaN(mult)) ? parseFloat(mult).toFixed(1) + '×' : '—';
+  // Use 10yr pill value directly for summary text
+  const hwM10 = parseFloat(props[sc + 'rp_10yr']);
+  const multStr = (!isNaN(hwM10) && hwM10 > 0) ? hwM10.toFixed(1) + '×' : '—';
 
   // ---- Return periods (cold) ----
   const cwRp1   = fmtRP(props[sc + 'cw_rp_2yr']);
   const cwRp5   = fmtRP(props[sc + 'cw_rp_5yr']);
   const cwRp10  = fmtRP(props[sc + 'cw_rp_10yr']);
-  const cwMult  = props[sc + 'cw_return_period_multiplier'];
+  // Use the 10yr pill value directly for the summary text (consistent)
+  const cwM10 = parseFloat(props[sc + 'cw_rp_10yr']);
   let cwMultStr = '—';
-  if (cwMult != null && !isNaN(cwMult)) {
-    const m = parseFloat(cwMult);
-    if (m === 0) cwMultStr = 'desaparece';
-    else if (m < 0.01) cwMultStr = 'prácticamente desaparece';
-    else if (m < 1) cwMultStr = Math.round((1 - m) * 100) + '% menos frecuente';
-    else if (m === 1) cwMultStr = 'sin cambio';
-    else cwMultStr = m.toFixed(1) + '× más frecuente';
+  if (!isNaN(cwM10)) {
+    if (cwM10 === 0) cwMultStr = 'desaparece';
+    else if (cwM10 < 0.01) cwMultStr = 'prácticamente desaparece';
+    else if (cwM10 < 1) cwMultStr = Math.round((1 - cwM10) * 100) + '% menos frecuente';
+    else if (cwM10 <= 1.05) cwMultStr = 'sin cambio';
+    else cwMultStr = cwM10.toFixed(1) + '× más frecuente';
   }
 
   if (isCold) {
