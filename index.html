@@ -1727,10 +1727,86 @@ function openChartDetail(chartId) {
         drawSparkDetail(cvs, cc, caption);
       });
     }
-    else if (chartId === 'rr') drawRRDetail(cvs, cc, caption);
-    else if (chartId === 'heatmap') drawHeatmapDetail(cvs, cc, caption);
-    else if (chartId === 'season') drawSeasonDetail(cvs, cc, caption);
-    else if (chartId === 'hist') drawHistDetail(cvs, cc, caption);
+    else if (chartId === 'rr') {
+      drawRRDetail(cvs, cc, caption);
+      _addCrosshair(cvs, cc, 'rr', caption);
+    }
+    else if (chartId === 'heatmap') {
+      drawHeatmapDetail(cvs, cc, caption);
+    }
+    else if (chartId === 'season') {
+      drawSeasonDetail(cvs, cc, caption);
+      _addCrosshair(cvs, cc, 'season', caption);
+    }
+    else if (chartId === 'hist') {
+      drawHistDetail(cvs, cc, caption);
+      _addCrosshair(cvs, cc, 'hist', caption);
+    }
+  });
+}
+
+// ------- Interactive crosshair for all detail charts -------
+function _addCrosshair(cvs, cc, chartId, captionEl) {
+  const tipDiv = document.createElement('div');
+  tipDiv.style.cssText = 'position:absolute;background:rgba(0,0,0,0.85);color:white;padding:5px 10px;border-radius:6px;font-size:12px;pointer-events:none;display:none;z-index:101;white-space:nowrap;';
+  cvs.parentElement.style.position = 'relative';
+  cvs.parentElement.appendChild(tipDiv);
+
+  cvs.addEventListener('mousemove', (e) => {
+    const rect = cvs.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) / rect.width;
+    const my = (e.clientY - rect.top) / rect.height;
+    let label = '';
+
+    if (chartId === 'rr') {
+      // 3 panels side by side
+      const rr = cc.cd.rr;
+      if (!rr) return;
+      const keys = ['duration','intensity','magnitude'];
+      const labels = ['Duración','Intensidad','Magnitud'];
+      const panelIdx = Math.min(Math.floor(mx * 3), 2);
+      const pts = rr[keys[panelIdx]];
+      if (!pts || pts.length < 2) return;
+      // Map within panel
+      const localX = (mx * 3) - panelIdx;
+      const ptIdx = Math.round(localX * (pts.length - 1));
+      const pt = pts[Math.max(0, Math.min(ptIdx, pts.length-1))];
+      label = `${labels[panelIdx]}: umbral=${pt[0].toFixed(1)}, RR=${pt[1].toFixed(2)}×`;
+    }
+    else if (chartId === 'season') {
+      // Monthly bars: 12 months
+      const sh = cc.cd.season_hist || [];
+      const sf = cc.cd.season_fut || [];
+      if (sh.length !== 12) return;
+      const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      const mi = Math.min(Math.floor(mx * 12 / 0.85), 11); // approximate
+      label = `${months[mi]}: hist=${(sh[mi]||0).toFixed(1)}, fut=${(sf[mi]||0).toFixed(1)}`;
+    }
+    else if (chartId === 'hist') {
+      // Two histograms
+      const hBins = cc.cd.hist_mag_hist || [];
+      const fBins = cc.cd.hist_mag_fut || [];
+      if (hBins.length === 0) return;
+      const allBins = hBins.concat(fBins);
+      const bi = Math.min(Math.floor(mx * hBins.length / 0.85), hBins.length-1);
+      if (bi >= 0 && bi < hBins.length) {
+        const h = hBins[bi], f = fBins[bi] || [0,0];
+        label = `${h[0].toFixed(0)}-${(hBins[bi+1]?hBins[bi+1][0]:h[0]+10).toFixed(0)} °C·h: hist=${h[1]}, fut=${f[1]}`;
+      }
+    }
+
+    if (label) {
+      tipDiv.textContent = label;
+      tipDiv.style.display = 'block';
+      tipDiv.style.left = Math.min(e.clientX - rect.left, rect.width - 200) + 'px';
+      tipDiv.style.top = '-30px';
+    } else {
+      tipDiv.style.display = 'none';
+    }
+  });
+
+  cvs.addEventListener('mouseleave', () => {
+    tipDiv.style.display = 'none';
   });
 }
 
@@ -1739,6 +1815,12 @@ function drawSparkDetail(cvs, cc, captionEl) {
   const W = cvs.width, H = cvs.height;
   const data = cc.cd.sparkline;
   if (!data) return;
+
+  const _isCold = cc.cd._isCold || false;
+  const lineColor = _isCold ? '#2166AC' : '#E85D3A';
+  const areaColor = _isCold ? 'rgba(33,102,172,0.12)' : 'rgba(232,93,58,0.12)';
+  const futShade  = _isCold ? 'rgba(33,102,172,0.08)' : 'rgba(232,93,58,0.08)';
+  const futLabel  = _isCold ? '#2166AC' : '#E85D3A';
 
   const pad = {l:70, r:20, t:30, b:50};
   const pw = W-pad.l-pad.r, ph = H-pad.t-pad.b;
@@ -1773,23 +1855,23 @@ function drawSparkDetail(cvs, cc, captionEl) {
   // Period shading
   const hEnd = pad.l+(2010-1980)*dx, fS = pad.l+(2050-1980)*dx, fE = pad.l+(2080-1980)*dx;
   ctx.fillStyle='rgba(68,119,170,0.08)'; ctx.fillRect(pad.l, pad.t, hEnd-pad.l, ph);
-  ctx.fillStyle='rgba(232,93,58,0.08)'; ctx.fillRect(fS, pad.t, fE-fS, ph);
+  ctx.fillStyle=futShade; ctx.fillRect(fS, pad.t, fE-fS, ph);
 
   // Period labels
   ctx.font='22px sans-serif'; ctx.textAlign='center';
   ctx.fillStyle='#4477AA'; ctx.fillText('Histórico (1980-2010)', (pad.l+hEnd)/2, pad.t+20);
-  ctx.fillStyle='#E85D3A'; ctx.fillText('Futuro (2050-2080)', (fS+fE)/2, pad.t+20);
+  ctx.fillStyle=futLabel; ctx.fillText('Futuro (2050-2080)', (fS+fE)/2, pad.t+20);
 
   // Area
   ctx.beginPath(); ctx.moveTo(pad.l, pad.t+ph);
   smooth.forEach((v,i) => ctx.lineTo(pad.l+i*dx, pad.t+ph-(v/maxV)*ph));
   ctx.lineTo(pad.l+pw, pad.t+ph); ctx.closePath();
-  ctx.fillStyle='rgba(232,93,58,0.12)'; ctx.fill();
+  ctx.fillStyle=areaColor; ctx.fill();
 
   // Line
   ctx.beginPath();
   smooth.forEach((v,i) => {const x=pad.l+i*dx, y=pad.t+ph-(v/maxV)*ph; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
-  ctx.strokeStyle='#E85D3A'; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.stroke();
+  ctx.strokeStyle=lineColor; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.stroke();
 
   // Axis labels
   ctx.save(); ctx.translate(16, pad.t+ph/2); ctx.rotate(-Math.PI/2);
@@ -1892,12 +1974,16 @@ function drawRRDetail(cvs, cc, captionEl) {
     pts.forEach((p,i) => { const x=toX(p[0]),y=toY(p[1]); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
     ctx.strokeStyle=m.color; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.stroke();
 
-    // Max annotation
-    const maxP = pts.reduce((a,b) => b[1]>a[1]?b:a);
-    const mx = toX(maxP[0]), my = toY(maxP[1]);
-    ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI*2); ctx.fillStyle=m.color; ctx.fill();
+    // Extremum annotation: mark max if series is rising, min if falling
+    const firstY = pts[0][1], lastY = pts[pts.length-1][1];
+    const isRising = lastY >= firstY;
+    const extremeP = isRising
+      ? pts.reduce((a,b) => b[1]>a[1]?b:a)
+      : pts.reduce((a,b) => b[1]<a[1]?b:a);
+    const ex = toX(extremeP[0]), ey = toY(extremeP[1]);
+    ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI*2); ctx.fillStyle=m.color; ctx.fill();
     ctx.font='bold 16px sans-serif'; ctx.textAlign='center'; ctx.fillStyle=m.color;
-    ctx.fillText(maxP[1].toFixed(1)+'×', mx, my-10);
+    ctx.fillText(extremeP[1].toFixed(2)+'×', ex, isRising ? ey-10 : ey+18);
 
     // Y axis label (only first panel)
     if (mi === 0) {
