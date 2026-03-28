@@ -1,0 +1,2491 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Olas de Calor y Fr&iacute;o en Chile — Mapa Interactivo</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- D3 (color scales only) -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+
+  <style>
+    /* ================================================================
+       RESET & BASE
+    ================================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --glass-bg:        rgba(255, 255, 255, 0.72);
+      --glass-border:    rgba(255, 255, 255, 0.55);
+      --glass-shadow:    0 8px 32px rgba(0, 0, 0, 0.18);
+      --blur:            blur(14px);
+      --radius-lg:       18px;
+      --radius-md:       12px;
+      --radius-sm:       8px;
+
+      --text-primary:    #1a1a2e;
+      --text-secondary:  #5a5a7a;
+      --text-accent:     #c0392b;
+
+      --heat-0:          #fff5f0;
+      --heat-1:          #fdd5c0;
+      --heat-2:          #fc9272;
+      --heat-3:          #fb6a4a;
+      --heat-4:          #de2d26;
+      --heat-5:          #a50f15;
+
+      --cold-0:          #f0f4ff;
+      --cold-1:          #c6d8f5;
+      --cold-2:          #6baed6;
+      --cold-3:          #3182bd;
+      --cold-4:          #084594;
+
+      --panel-width:     380px;
+      --transition:      0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      --font:            -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: var(--font);
+      background: #f0f0f0;
+      color: var(--text-primary);
+      overflow: hidden;
+    }
+
+    /* ================================================================
+       MAP
+    ================================================================ */
+    #map {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    /* ================================================================
+       GLASS PANEL BASE
+    ================================================================ */
+    .glass {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+    }
+
+    /* ================================================================
+       BOTTOM-LEFT CONTROL STACK
+    ================================================================ */
+    #controls-stack {
+      position: fixed;
+      bottom: 16px;
+      left: 16px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #event-toggle {
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+    }
+
+    #event-toggle .toggle-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .event-toggle-pills {
+      display: flex;
+      gap: 4px;
+      background: rgba(0,0,0,0.06);
+      border-radius: 20px;
+      padding: 3px;
+    }
+
+    .event-pill {
+      border: none;
+      background: none;
+      padding: 5px 14px;
+      border-radius: 18px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+      color: var(--text-secondary);
+    }
+
+    .event-pill:hover {
+      background: rgba(255,255,255,0.5);
+    }
+
+    .event-pill.active[data-type="heat"] {
+      background: rgba(192, 57, 43, 0.15);
+      color: #c0392b;
+      box-shadow: 0 1px 4px rgba(192,57,43,0.2);
+    }
+
+    .event-pill.active[data-type="cold"] {
+      background: rgba(8, 69, 148, 0.15);
+      color: #084594;
+      box-shadow: 0 1px 4px rgba(8,69,148,0.2);
+    }
+
+    /* ================================================================
+       LEFT SIDEBAR: METRIC SELECTOR
+    ================================================================ */
+    #metric-sidebar {
+      border-radius: var(--radius-lg);
+      padding: 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 190px;
+    }
+
+    #scenario-toggle {
+      border-radius: var(--radius-md);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #scenario-toggle .toggle-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 2px;
+    }
+
+    .scenario-option {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      padding: 4px 6px;
+      border-radius: var(--radius-sm);
+      transition: background var(--transition);
+    }
+
+    .scenario-option:hover { background: rgba(0,0,0,0.06); }
+
+    .scenario-option input[type="radio"] {
+      accent-color: #c0392b;
+      width: 14px;
+      height: 14px;
+    }
+
+    #metric-sidebar .sidebar-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .metric-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      transition: background var(--transition);
+      white-space: nowrap;
+    }
+
+    .metric-option:hover { background: rgba(0,0,0,0.06); }
+
+    .metric-option input[type="radio"] {
+      accent-color: #c0392b;
+      width: 14px;
+      height: 14px;
+    }
+
+    .metric-sep {
+      height: 1px;
+      background: rgba(0,0,0,0.08);
+      margin: 4px 0;
+    }
+
+    /* ================================================================
+       BOTTOM-LEFT: LEGEND
+    ================================================================ */
+    #legend {
+      position: fixed;
+      bottom: 32px;
+      right: 16px;
+      z-index: 1000;
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      min-width: 200px;
+    }
+
+    #legend .legend-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    #legend-bar {
+      height: 12px;
+      border-radius: 6px;
+      margin-bottom: 4px;
+    }
+
+    #legend-ticks {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+
+    /* ================================================================
+       RIGHT PANEL: COMMUNE DETAIL
+    ================================================================ */
+    #detail-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: var(--panel-width);
+      z-index: 1100;
+      transform: translateX(100%);
+      transition: transform var(--transition);
+      overflow-y: auto;
+      border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+      background: rgba(255, 255, 255, 0.88);
+      border-left: 1px solid var(--glass-border);
+      box-shadow: -12px 0 40px rgba(0,0,0,0.15);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      display: flex;
+      flex-direction: column;
+    }
+
+    #detail-panel.open {
+      transform: translateX(0);
+    }
+
+    /* Panel close button */
+    #panel-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.08);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: var(--text-secondary);
+      transition: background var(--transition);
+      flex-shrink: 0;
+    }
+
+    #panel-close:hover { background: rgba(0,0,0,0.15); }
+
+    /* Panel header */
+    #panel-header {
+      padding: 28px 24px 20px;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      flex-shrink: 0;
+    }
+
+    #panel-commune-name {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1.2;
+      margin-bottom: 4px;
+    }
+
+    #panel-region-name {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    #panel-subtitle {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-accent);
+      letter-spacing: 0.03em;
+      padding: 5px 10px;
+      background: rgba(192, 57, 43, 0.08);
+      border-radius: 20px;
+      display: inline-block;
+    }
+
+    /* Panel body */
+    #panel-body {
+      padding: 20px 20px 28px;
+      flex: 1;
+    }
+
+    /* Section heading */
+    .section-heading {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin: 20px 0 10px;
+    }
+
+    .section-heading:first-child { margin-top: 0; }
+
+    /* Metric cards row */
+    .metric-cards-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .metric-card {
+      background: rgba(0, 0, 0, 0.04);
+      border-radius: var(--radius-md);
+      padding: 12px 10px;
+      text-align: center;
+      transition: background var(--transition);
+    }
+
+    .metric-card:hover { background: rgba(0,0,0,0.07); }
+
+    .metric-card .card-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .metric-card .card-change {
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .metric-card .card-abs {
+      font-size: 10px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .pos { color: #c0392b; }  /* increase = bad for heat */
+    .neg { color: #2980b9; }  /* decrease */
+    .neu { color: var(--text-secondary); }
+
+    /* Full-width metric card */
+    .metric-card-full {
+      background: rgba(0, 0, 0, 0.04);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .metric-card-full .card-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .metric-card-full .card-change {
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .metric-card-full .card-values {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-align: right;
+      line-height: 1.5;
+    }
+
+    /* Return period box */
+    #return-period-box {
+      background: linear-gradient(135deg, rgba(192,57,43,0.08), rgba(192,57,43,0.03));
+      border: 1px solid rgba(192,57,43,0.15);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-top: 4px;
+    }
+
+    #return-period-text {
+      font-size: 13px;
+      color: var(--text-primary);
+      line-height: 1.6;
+    }
+
+    #return-period-text strong {
+      color: var(--text-accent);
+      font-weight: 700;
+    }
+
+    .rp-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .rp-pill {
+      flex: 1;
+      background: rgba(192,57,43,0.10);
+      border-radius: 20px;
+      padding: 6px 8px;
+      text-align: center;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+
+    .rp-pill strong {
+      display: block;
+      font-size: 14px;
+      font-weight: 700;
+      color: #c0392b;
+    }
+
+    /* Hover tooltip */
+    #tooltip {
+      position: fixed;
+      background: rgba(26,26,46,0.92);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      pointer-events: none;
+      z-index: 2000;
+      display: none;
+      max-width: 220px;
+      line-height: 1.5;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+
+    /* ================================================================
+       LOADING OVERLAY
+    ================================================================ */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: rgba(240,240,240,0.95);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      transition: opacity 0.4s;
+    }
+
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(192,57,43,0.15);
+      border-top-color: #c0392b;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #loading p {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    /* ================================================================
+       RESPONSIVE — mobile: panel becomes bottom sheet
+    ================================================================ */
+    @media (max-width: 600px) {
+      #metric-sidebar {
+        top: auto;
+        bottom: 100px;
+        left: 50%;
+        transform: translateX(-50%);
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+        min-width: unset;
+      }
+
+      #metric-sidebar .sidebar-label { display: none; }
+      .metric-sep { display: none; }
+
+      #detail-panel {
+        top: auto;
+        right: 0;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        max-height: 65vh;
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        border-left: none;
+        border-top: 1px solid var(--glass-border);
+        transform: translateY(100%);
+      }
+
+      #detail-panel.open {
+        transform: translateY(0);
+      }
+
+      #legend {
+        bottom: auto;
+        top: 80px;
+        left: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading">
+  <div class="spinner"></div>
+  <p>Cargando datos comunales&hellip;</p>
+</div>
+
+<!-- Map container -->
+<div id="map"></div>
+
+<!-- Hover tooltip -->
+<div id="tooltip"></div>
+
+<!-- Bottom-left: all controls stacked -->
+<div id="controls-stack">
+
+<div id="metric-sidebar" class="glass">
+  <div class="sidebar-label">Variable</div>
+  <!-- Heat wave metrics -->
+  <label class="metric-option" data-event="heat">
+    <input type="radio" name="metric" value="hw_freq_change_pct" checked />
+    Frecuencia (%)
+  </label>
+  <label class="metric-option" data-event="heat">
+    <input type="radio" name="metric" value="hw_duration_change_pct" />
+    Duración (%)
+  </label>
+  <div class="metric-sep" data-event="heat"></div>
+  <label class="metric-option" data-event="heat">
+    <input type="radio" name="metric" value="hw_intensity_change_pct" />
+    Intensidad (%)
+  </label>
+  <label class="metric-option" data-event="heat">
+    <input type="radio" name="metric" value="hw_magnitude_change_pct" />
+    Magnitud (%)
+  </label>
+  <div class="metric-sep" data-event="heat"></div>
+  <label class="metric-option" data-event="heat">
+    <input type="radio" name="metric" value="return_period_multiplier" />
+    Período retorno ×
+  </label>
+  <!-- Cold wave metrics -->
+  <label class="metric-option" data-event="cold" style="display:none;">
+    <input type="radio" name="metric" value="cw_freq_change_pct" />
+    Frecuencia (%)
+  </label>
+  <label class="metric-option" data-event="cold" style="display:none;">
+    <input type="radio" name="metric" value="cw_duration_change_pct" />
+    Duración (%)
+  </label>
+  <div class="metric-sep" data-event="cold" style="display:none;"></div>
+  <label class="metric-option" data-event="cold" style="display:none;">
+    <input type="radio" name="metric" value="cw_intensity_change_pct" />
+    Intensidad (%)
+  </label>
+  <label class="metric-option" data-event="cold" style="display:none;">
+    <input type="radio" name="metric" value="cw_magnitude_change_pct" />
+    Magnitud (%)
+  </label>
+  <div class="metric-sep" data-event="cold" style="display:none;"></div>
+  <label class="metric-option" data-event="cold" style="display:none;">
+    <input type="radio" name="metric" value="cw_return_period_multiplier" />
+    Período retorno ×
+  </label>
+</div>
+
+<div id="scenario-toggle" class="glass">
+  <div class="toggle-label">Escenario</div>
+  <label class="scenario-option">
+    <input type="radio" name="scenario" value="ssp370" checked />
+    SSP3-7.0
+  </label>
+  <label class="scenario-option">
+    <input type="radio" name="scenario" value="ssp585" disabled />
+    SSP5-8.5 <span style="font-size:10px;color:var(--text-secondary);">(pronto)</span>
+  </label>
+</div>
+
+<div id="event-toggle" class="glass">
+  <div class="toggle-label">Tipo de evento</div>
+  <div class="event-toggle-pills">
+    <button class="event-pill active" data-type="heat">Calor</button>
+    <button class="event-pill" data-type="cold">Fr&iacute;o</button>
+  </div>
+</div>
+
+</div><!-- /controls-stack -->
+
+<!-- Bottom-right: color legend -->
+<div id="legend" class="glass">
+  <div class="legend-title" id="legend-title">Cambio en frecuencia (%)</div>
+  <canvas id="legend-bar" width="168" height="12"></canvas>
+  <div id="legend-ticks">
+    <span id="tick-min"></span>
+    <span id="tick-mid"></span>
+    <span id="tick-max"></span>
+  </div>
+</div>
+
+<!-- Right panel: commune detail -->
+<div id="detail-panel">
+  <button id="panel-close" title="Cerrar">&#x2715;</button>
+  <div id="panel-header">
+    <div id="panel-commune-name">—</div>
+    <div id="panel-region-name">—</div>
+    <div id="panel-subtitle">SSP3-7.0 · Histórico (1980–2010) vs Futuro (2050–2080)</div>
+  </div>
+  <div id="panel-body">
+    <!-- Populated by JS -->
+  </div>
+</div>
+
+<!-- ================================================================
+     GEOJSON + CHARTS DATA (loaded async)
+================================================================ -->
+<script>
+let COMMUNES_DATA = null;
+let COMMUNE_CHARTS = null;
+let _chartsLoading = false;
+function loadGeoData() {
+  return fetch('communes_heatwave.geojson')
+    .then(r => r.json())
+    .then(d => { COMMUNES_DATA = d; })
+    .catch(e => { console.error('GeoJSON load error:', e); COMMUNES_DATA = {"type":"FeatureCollection","features":[]}; });
+}
+function loadChartsData() {
+  return new Promise((resolve) => {
+    if (COMMUNE_CHARTS) { resolve(); return; }
+    if (_chartsLoading) { setTimeout(() => loadChartsData().then(resolve), 100); return; }
+    _chartsLoading = true;
+    fetch('charts.json').then(r => r.json()).then(d => {
+      COMMUNE_CHARTS = d;
+      _chartsLoading = false;
+      resolve();
+    }).catch(() => {
+      COMMUNE_CHARTS = {};
+      _chartsLoading = false;
+      resolve();
+    });
+  });
+}
+</script>
+
+<!-- ================================================================
+     APPLICATION LOGIC
+================================================================ -->
+<script>
+// ---------------------------------------------------------------
+// State
+// ---------------------------------------------------------------
+let currentScenario   = 'ssp370';
+let currentMetric     = 'hw_freq_change_pct';
+let currentEventType  = 'heat';
+let geojsonLayer      = null;
+let selectedLayer     = null;
+
+// ---------------------------------------------------------------
+// Metric configuration
+// ---------------------------------------------------------------
+const METRICS = {
+  // --- Heat wave metrics ---
+  hw_freq_change_pct: {
+    label:   'Cambio en frecuencia',
+    unit:    '%',
+    domain:  [0, 200],
+    format:  v => (v > 0 ? '+' : '') + v.toFixed(1) + '%',
+    isRatio: false,
+    eventType: 'heat',
+  },
+  hw_duration_change_pct: {
+    label:   'Cambio en duración',
+    unit:    '%',
+    domain:  [0, 150],
+    format:  v => (v > 0 ? '+' : '') + v.toFixed(1) + '%',
+    isRatio: false,
+    eventType: 'heat',
+  },
+  hw_intensity_change_pct: {
+    label:   'Cambio en intensidad',
+    unit:    '%',
+    domain:  [0, 100],
+    format:  v => (v > 0 ? '+' : '') + v.toFixed(1) + '%',
+    isRatio: false,
+    eventType: 'heat',
+  },
+  hw_magnitude_change_pct: {
+    label:   'Cambio en magnitud',
+    unit:    '%',
+    domain:  [0, 250],
+    format:  v => (v > 0 ? '+' : '') + v.toFixed(1) + '%',
+    isRatio: false,
+    eventType: 'heat',
+  },
+  return_period_multiplier: {
+    label:   'Período de retorno ×',
+    unit:    '×',
+    domain:  [1, 5],
+    format:  v => v.toFixed(1) + '×',
+    isRatio: true,
+    eventType: 'heat',
+  },
+  // --- Cold wave metrics ---
+  cw_freq_change_pct: {
+    label:   'Cambio en frecuencia',
+    unit:    '%',
+    domain:  [-100, 0],
+    format:  v => (v > 0 ? '+' : '') + v.toFixed(1) + '%',
+    isRatio: false,
+    eventType: 'cold',
+  },
+  cw_duration_change_pct: {
+    label:   'Cambio en duración',
+    unit:    '%',
+    domain:  [-80, 0],
+    format:  v => (v > 0 ? '+' : '') + v.toFixed(1) + '%',
+    isRatio: false,
+    eventType: 'cold',
+  },
+  cw_intensity_change_pct: {
+    label:   'Cambio en intensidad',
+    unit:    '%',
+    domain:  [-50, 0],
+    format:  v => (v > 0 ? '+' : '') + v.toFixed(1) + '%',
+    isRatio: false,
+    eventType: 'cold',
+  },
+  cw_magnitude_change_pct: {
+    label:   'Cambio en magnitud',
+    unit:    '%',
+    domain:  [-100, 0],
+    format:  v => (v > 0 ? '+' : '') + v.toFixed(1) + '%',
+    isRatio: false,
+    eventType: 'cold',
+  },
+  cw_return_period_multiplier: {
+    label:   'Período de retorno ×',
+    unit:    '×',
+    domain:  [0, 2],
+    format:  v => v.toFixed(1) + '×',
+    isRatio: true,
+    eventType: 'cold',
+  },
+};
+
+// ---------------------------------------------------------------
+// Color scale
+// ---------------------------------------------------------------
+const HEAT_COLOR_STOPS = [
+  '#fff5f0', '#fdd5c0', '#fc9272', '#fb6a4a', '#de2d26', '#a50f15',
+];
+
+const COLD_COLOR_STOPS = [
+  '#f0f4ff', '#c6dbef', '#6baed6', '#3182bd', '#1560a8', '#084594',
+];
+
+function buildColorScale(domain) {
+  const stops = currentEventType === 'cold' ? COLD_COLOR_STOPS : HEAT_COLOR_STOPS;
+  // Cold: domain is negative (e.g. -90% to 0%). We want darkest blue near 0 (less change)
+  // and lightest blue at most negative (biggest decrease = fewer cold waves = good).
+  // Default domain order works: [min, max] maps lightest→darkest.
+  return d3.scaleSequential()
+    .domain(domain)
+    .interpolator(d3.interpolateRgbBasis(stops))
+    .clamp(true);
+}
+
+function getColor(value, colorScale) {
+  if (value == null || isNaN(value)) return '#cccccc';
+  return colorScale(value);
+}
+
+// ---------------------------------------------------------------
+// Derive domain from data
+// ---------------------------------------------------------------
+function computeDomain(metric, scenario) {
+  if (!COMMUNES_DATA || !COMMUNES_DATA.features) return [0, 1];
+  const key = scenario + '__' + metric;
+  const vals = COMMUNES_DATA.features
+    .map(f => f.properties[key])
+    .filter(v => v != null && !isNaN(v) && isFinite(v));
+
+  if (vals.length === 0) return [0, 1];
+
+  const lo = d3.quantile(vals.sort(d3.ascending), 0.02);
+  const hi = d3.quantile(vals, 0.98);
+
+  // For cold wave percentage metrics (typically negative), keep full range
+  if (currentEventType === 'cold' && !METRICS[metric].isRatio) {
+    return [lo, hi];
+  }
+  return [Math.max(0, lo), hi];
+}
+
+// ---------------------------------------------------------------
+// Map initialisation
+// ---------------------------------------------------------------
+const map = L.map('map', {
+  center:      [-35.5, -71.0],
+  zoom:        5,
+  zoomControl: true,
+  attributionControl: true,
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains:  'abcd',
+  maxZoom:     19,
+}).addTo(map);
+
+// ---------------------------------------------------------------
+// Tooltip
+// ---------------------------------------------------------------
+const tooltip = document.getElementById('tooltip');
+
+document.addEventListener('mousemove', (e) => {
+  tooltip.style.left = (e.clientX + 14) + 'px';
+  tooltip.style.top  = (e.clientY - 10) + 'px';
+});
+
+function showTooltip(html) {
+  tooltip.innerHTML = html;
+  tooltip.style.display = 'block';
+}
+
+function hideTooltip() {
+  tooltip.style.display = 'none';
+}
+
+// ---------------------------------------------------------------
+// Render GeoJSON layer
+// ---------------------------------------------------------------
+function renderLayer() {
+  if (!COMMUNES_DATA) return;
+  if (geojsonLayer) map.removeLayer(geojsonLayer);
+
+  const domain     = computeDomain(currentMetric, currentScenario);
+  const colorScale = buildColorScale(domain);
+  const metaCfg    = METRICS[currentMetric];
+
+  function propKey(metric) {
+    return currentScenario + '__' + metric;
+  }
+
+  geojsonLayer = L.geoJSON(COMMUNES_DATA, {
+    style: (feature) => {
+      const val   = feature.properties[propKey(currentMetric)];
+      const fill  = getColor(val, colorScale);
+      const isSelected = selectedLayer &&
+        selectedLayer.feature.properties.nombre === feature.properties.nombre;
+      return {
+        fillColor:   fill,
+        fillOpacity: 0.78,
+        color:       isSelected ? '#1a1a2e' : 'rgba(255,255,255,0.4)',
+        weight:      isSelected ? 2.0 : 0.4,
+      };
+    },
+    onEachFeature: (feature, layer) => {
+      const props = feature.properties;
+
+      layer.on('mouseover', function (e) {
+        const val = props[propKey(currentMetric)];
+        const fmtVal = (val != null && !isNaN(val))
+          ? metaCfg.format(val)
+          : 'Sin datos';
+
+        const tipColor = currentEventType === 'cold' ? '#6baed6' : '#fc9272';
+        showTooltip(
+          '<strong>' + (props.nombre || '—') + '</strong><br>' +
+          '<span style="color:rgba(255,255,255,0.7);font-size:11px;">' +
+            (props.region || '') +
+          '</span><br>' +
+          '<span style="color:' + tipColor + ';font-size:12px;margin-top:2px;display:inline-block;">' +
+            metaCfg.label + ': <strong>' + fmtVal + '</strong>' +
+          '</span>'
+        );
+
+        this.setStyle({
+          fillOpacity: 0.92,
+          color: 'rgba(255,255,255,0.9)',
+          weight: 1.2,
+        });
+        this.bringToFront();
+      });
+
+      layer.on('mouseout', function (e) {
+        hideTooltip();
+        geojsonLayer.resetStyle(this);
+        if (selectedLayer) {
+          selectedLayer.setStyle({
+            color: '#1a1a2e',
+            weight: 2.0,
+            fillOpacity: 0.85,
+          });
+          selectedLayer.bringToFront();
+        }
+      });
+
+      layer.on('click', function (e) {
+        selectedLayer = layer;
+        geojsonLayer.resetStyle();
+        this.setStyle({
+          color: '#1a1a2e',
+          weight: 2.0,
+          fillOpacity: 0.85,
+        });
+        this.bringToFront();
+        openPanel(props);
+        L.DomEvent.stopPropagation(e);
+      });
+    },
+  }).addTo(map);
+
+  // Update legend
+  updateLegend(domain, metaCfg);
+}
+
+// ---------------------------------------------------------------
+// Legend
+// ---------------------------------------------------------------
+function updateLegend(domain, metaCfg) {
+  const evPrefix = currentEventType === 'cold' ? 'Frío: ' : '';
+  document.getElementById('legend-title').textContent = evPrefix + metaCfg.label + ' (' + metaCfg.unit + ')';
+
+  const canvas = document.getElementById('legend-bar');
+  const ctx    = canvas.getContext('2d');
+  const w      = canvas.width;
+  const h      = canvas.height;
+  const colorScale = buildColorScale(domain);
+
+  ctx.clearRect(0, 0, w, h);
+  // For the legend bar, we always draw left-to-right from lightest to darkest.
+  // For cold: domain[0] is max (lightest), domain[1] is min (darkest) after buildColorScale reversal.
+  // We sample the color scale at evenly spaced values from domain min to max.
+  const dMin = Math.min(domain[0], domain[1]);
+  const dMax = Math.max(domain[0], domain[1]);
+  for (let i = 0; i < w; i++) {
+    ctx.fillStyle = colorScale(dMin + (dMax - dMin) * i / w);
+    ctx.fillRect(i, 0, 1, h);
+  }
+
+  // Rounded corners clip
+  ctx.globalCompositeOperation = 'destination-in';
+  ctx.beginPath();
+  ctx.roundRect(0, 0, w, h, 6);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
+  const fmt = (v) => {
+    if (metaCfg.isRatio) return v.toFixed(1) + '×';
+    return (v >= 0 ? '+' : '') + Math.round(v) + '%';
+  };
+
+  document.getElementById('tick-min').textContent = fmt(dMin);
+  document.getElementById('tick-mid').textContent = fmt((dMin + dMax) / 2);
+  document.getElementById('tick-max').textContent = fmt(dMax);
+}
+
+// ---------------------------------------------------------------
+// Detail panel
+// ---------------------------------------------------------------
+function openPanel(props) {
+  document.getElementById('panel-commune-name').textContent = props.nombre || '—';
+  document.getElementById('panel-region-name').textContent  = props.region  || '—';
+
+  const scLabel = currentScenario === 'ssp370' ? 'SSP3-7.0' : 'SSP5-8.5';
+  const evLabel = currentEventType === 'cold' ? 'Olas de frío' : 'Olas de calor';
+  document.getElementById('panel-subtitle').textContent =
+    evLabel + ' · ' + scLabel + ' · Histórico (1980–2010) vs Futuro (2050–2080)';
+  // Update subtitle styling for cold/heat
+  const subtitleEl = document.getElementById('panel-subtitle');
+  if (currentEventType === 'cold') {
+    subtitleEl.style.color = '#084594';
+    subtitleEl.style.background = 'rgba(8,69,148,0.08)';
+  } else {
+    subtitleEl.style.color = '#c0392b';
+    subtitleEl.style.background = 'rgba(192,57,43,0.08)';
+  }
+
+  document.getElementById('panel-body').innerHTML = buildPanelBody(props);
+  document.getElementById('detail-panel').classList.add('open');
+  // Load charts data lazily, then render
+  loadChartsData().then(() => requestAnimationFrame(() => renderCommuneCharts(props)));
+}
+
+function closePanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+  if (selectedLayer) {
+    geojsonLayer.resetStyle(selectedLayer);
+    selectedLayer = null;
+  }
+}
+
+function fmt1(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = parseFloat(v);
+  const abs = Math.abs(n);
+  if (abs === 0) return '0';
+  if (abs < 0.01)  return n.toFixed(4);
+  if (abs < 0.1)   return n.toFixed(3);
+  if (abs < 1)     return n.toFixed(2);
+  if (abs < 10)    return n.toFixed(1);
+  return Math.round(n).toString();
+}
+
+function fmtFreq(v) {
+  /* Format frequency with smart unit: events/year, /month, or /decade */
+  if (v == null || isNaN(v)) return { val: '—', unit: '' };
+  const n = parseFloat(v);
+  if (n === 0) return { val: '0', unit: 'ev/año' };
+  if (n >= 1)  return { val: n.toFixed(1), unit: 'ev/año' };
+  if (n >= 1/12) return { val: (n * 12).toFixed(1), unit: 'ev/12 meses' };
+  return { val: (n * 10).toFixed(2), unit: 'ev/década' };
+}
+
+function fmtRP(v) {
+  /* Format return period multiplier */
+  if (v == null || isNaN(v)) return '—';
+  const n = parseFloat(v);
+  if (n === 0) return '—';
+  if (n < 0.01) return '~0';
+  if (n < 1) return n.toFixed(2);
+  return n.toFixed(1);
+}
+
+function fmtPct(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = parseFloat(v);
+  return (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+}
+
+function changeClass(v) {
+  if (v == null || isNaN(v)) return 'neu';
+  return parseFloat(v) > 0 ? 'pos' : 'neg';
+}
+
+function cwChangeClass(v) {
+  // For cold waves: decrease (negative) is expected under warming — show blue
+  // Increase (positive, unusual) would be red
+  if (v == null || isNaN(v)) return 'neu';
+  return parseFloat(v) < 0 ? 'neg' : 'pos';
+}
+
+function buildPanelBody(props) {
+  const sc = currentScenario + '__';
+  const isCold = currentEventType === 'cold';
+
+  // ---- Heat wave metrics ----
+  const hwFreqHObj = fmtFreq(props[sc + 'hw_freq_hist']);
+  const hwFreqFObj = fmtFreq(props[sc + 'hw_freq_future']);
+  const hwFreqH  = hwFreqHObj.val;
+  const hwFreqF  = hwFreqFObj.val;
+  const hwFreqUnit = hwFreqFObj.unit || hwFreqHObj.unit;
+  const hwFreqP  = fmtPct(props[sc + 'hw_freq_change_pct']);
+  const hwFreqCl = changeClass(props[sc + 'hw_freq_change_pct']);
+
+  const hwDurH   = fmt1(props[sc + 'hw_duration_hist']);
+  const hwDurF   = fmt1(props[sc + 'hw_duration_future']);
+  const hwDurP   = fmtPct(props[sc + 'hw_duration_change_pct']);
+  const hwDurCl  = changeClass(props[sc + 'hw_duration_change_pct']);
+
+  const hwIntH   = fmt1(props[sc + 'hw_intensity_hist']);
+  const hwIntF   = fmt1(props[sc + 'hw_intensity_future']);
+  const hwIntP   = fmtPct(props[sc + 'hw_intensity_change_pct']);
+  const hwIntCl  = changeClass(props[sc + 'hw_intensity_change_pct']);
+
+  const hwMagH   = fmt1(props[sc + 'hw_magnitude_hist']);
+  const hwMagF   = fmt1(props[sc + 'hw_magnitude_future']);
+  const hwMagP   = fmtPct(props[sc + 'hw_magnitude_change_pct']);
+  const hwMagCl  = changeClass(props[sc + 'hw_magnitude_change_pct']);
+
+  // ---- Cold wave metrics ----
+  const cwFreqHObj = fmtFreq(props[sc + 'cw_freq_hist']);
+  const cwFreqFObj = fmtFreq(props[sc + 'cw_freq_future']);
+  const cwFreqH  = cwFreqHObj.val;
+  const cwFreqF  = cwFreqFObj.val;
+  const cwFreqUnit = cwFreqFObj.unit || cwFreqHObj.unit;
+  const cwFreqP  = fmtPct(props[sc + 'cw_freq_change_pct']);
+  const cwFreqCl = cwChangeClass(props[sc + 'cw_freq_change_pct']);
+
+  const cwDurH   = fmt1(props[sc + 'cw_duration_hist']);
+  const cwDurF   = fmt1(props[sc + 'cw_duration_future']);
+  const cwDurP   = fmtPct(props[sc + 'cw_duration_change_pct']);
+  const cwDurCl  = cwChangeClass(props[sc + 'cw_duration_change_pct']);
+
+  const cwIntH   = fmt1(props[sc + 'cw_intensity_hist']);
+  const cwIntF   = fmt1(props[sc + 'cw_intensity_future']);
+  const cwIntP   = fmtPct(props[sc + 'cw_intensity_change_pct']);
+  const cwIntCl  = cwChangeClass(props[sc + 'cw_intensity_change_pct']);
+
+  const cwMagH   = fmt1(props[sc + 'cw_magnitude_hist']);
+  const cwMagF   = fmt1(props[sc + 'cw_magnitude_future']);
+  const cwMagP   = fmtPct(props[sc + 'cw_magnitude_change_pct']);
+  const cwMagCl  = cwChangeClass(props[sc + 'cw_magnitude_change_pct']);
+
+  // ---- Return periods (heat) ----
+  const rp1   = fmtRP(props[sc + 'rp_2yr']);
+  const rp5   = fmtRP(props[sc + 'rp_5yr']);
+  const rp10  = fmtRP(props[sc + 'rp_10yr']);
+  const mult  = props[sc + 'return_period_multiplier'];
+  const multStr = (mult != null && !isNaN(mult)) ? parseFloat(mult).toFixed(1) + '×' : '—';
+
+  // ---- Return periods (cold) ----
+  const cwRp1   = fmtRP(props[sc + 'cw_rp_2yr']);
+  const cwRp5   = fmtRP(props[sc + 'cw_rp_5yr']);
+  const cwRp10  = fmtRP(props[sc + 'cw_rp_10yr']);
+  const cwMult  = props[sc + 'cw_return_period_multiplier'];
+  // For cold: multiplier < 1 means less frequent. Show as "X% menos frecuente" or "desaparece"
+  let cwMultStr = '—';
+  if (cwMult != null && !isNaN(cwMult)) {
+    const m = parseFloat(cwMult);
+    if (m === 0) cwMultStr = 'desaparece';
+    else if (m < 0.01) cwMultStr = 'prácticamente desaparece';
+    else cwMultStr = Math.round((1 - m) * 100) + '% menos frecuente';
+  }
+
+  if (isCold) {
+    return `
+      <div class="section-heading" style="color:#084594;">Olas de fr&iacute;o</div>
+      <div class="metric-cards-row">
+        <div class="metric-card">
+          <div class="card-label">Frecuencia</div>
+          <div class="card-change ${cwFreqCl}">${cwFreqP}</div>
+          <div class="card-abs">${cwFreqH} → ${cwFreqF}<br>${cwFreqUnit}</div>
+        </div>
+        <div class="metric-card">
+          <div class="card-label">Duración</div>
+          <div class="card-change ${cwDurCl}">${cwDurP}</div>
+          <div class="card-abs">${cwDurH} → ${cwDurF}<br>días/evento</div>
+        </div>
+        <div class="metric-card">
+          <div class="card-label">Intensidad</div>
+          <div class="card-change ${cwIntCl}">${cwIntP}</div>
+          <div class="card-abs">${cwIntH} → ${cwIntF}<br>°C anomalía</div>
+        </div>
+      </div>
+
+      <div class="metric-card-full">
+        <div>
+          <div class="card-label">Magnitud (°C·h)</div>
+          <div class="card-change ${cwMagCl}">${cwMagP}</div>
+        </div>
+        <div class="card-values">
+          Hist: ${cwMagH} °C·h<br>
+          Futuro: ${cwMagF} °C·h
+        </div>
+      </div>
+
+      <div class="section-heading">Período de retorno</div>
+      <div id="return-period-box" style="background:linear-gradient(135deg,rgba(8,69,148,0.08),rgba(8,69,148,0.03));border-color:rgba(8,69,148,0.15);">
+        <div id="return-period-text">
+          Un evento de frío histórico de <strong style="color:#084594;">10 años</strong>
+          en el futuro <strong style="color:#084594;">${cwMultStr}</strong>.
+        </div>
+        <div class="rp-row">
+          <div class="rp-pill" style="background:rgba(8,69,148,0.10);">
+            <strong style="color:#084594;">${cwRp1 === '—' ? 'desaparece' : cwRp1 + '×'}</strong>
+            2 años hist.
+          </div>
+          <div class="rp-pill" style="background:rgba(8,69,148,0.10);">
+            <strong style="color:#084594;">${cwRp5 === '—' ? 'desaparece' : cwRp5 + '×'}</strong>
+            5 años hist.
+          </div>
+          <div class="rp-pill" style="background:rgba(8,69,148,0.10);">
+            <strong style="color:#084594;">${cwRp10 === '—' ? 'desaparece' : cwRp10 + '×'}</strong>
+            10 años hist.
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:8px;">
+          Multiplicador &lt;1 = menos frecuente en el futuro. "Desaparece" = evento ya no ocurre.
+        </div>
+      </div>
+
+      <div class="section-heading">Gráficos</div>
+      <div id="commune-charts" style="display:flex;flex-direction:column;gap:8px;"></div>
+    `;
+  }
+
+  return `
+    <div class="section-heading">Olas de calor</div>
+    <div class="metric-cards-row">
+      <div class="metric-card">
+        <div class="card-label">Frecuencia</div>
+        <div class="card-change ${hwFreqCl}">${hwFreqP}</div>
+        <div class="card-abs">${hwFreqH} → ${hwFreqF}<br>${hwFreqUnit}</div>
+      </div>
+      <div class="metric-card">
+        <div class="card-label">Duración</div>
+        <div class="card-change ${hwDurCl}">${hwDurP}</div>
+        <div class="card-abs">${hwDurH} → ${hwDurF}<br>días/evento</div>
+      </div>
+      <div class="metric-card">
+        <div class="card-label">Intensidad</div>
+        <div class="card-change ${hwIntCl}">${hwIntP}</div>
+        <div class="card-abs">${hwIntH} → ${hwIntF}<br>°C anomalía</div>
+      </div>
+    </div>
+
+    <div class="metric-card-full">
+      <div>
+        <div class="card-label">Magnitud (°C·h)</div>
+        <div class="card-change ${hwMagCl}">${hwMagP}</div>
+      </div>
+      <div class="card-values">
+        Hist: ${hwMagH} °C·h<br>
+        Futuro: ${hwMagF} °C·h
+      </div>
+    </div>
+
+    <div class="section-heading">Período de retorno</div>
+    <div id="return-period-box">
+      <div id="return-period-text">
+        Un evento de calor histórico de <strong>10 años</strong>
+        ocurrirá ahora <strong>${multStr}</strong> más frecuentemente en el futuro.
+      </div>
+      <div class="rp-row">
+        <div class="rp-pill">
+          <strong>${rp1}</strong>
+          2 años hist.
+        </div>
+        <div class="rp-pill">
+          <strong>${rp5}</strong>
+          5 años hist.
+        </div>
+        <div class="rp-pill">
+          <strong>${rp10}</strong>
+          10 años hist.
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--text-secondary);margin-top:8px;">
+        Valores = multiplicador de frecuencia para cada evento histórico de referencia.
+      </div>
+    </div>
+
+    <div class="section-heading">Gráficos</div>
+    <div id="commune-charts" style="display:flex;flex-direction:column;gap:8px;"></div>
+  `;
+}
+
+// =====================================================
+// CHART SYSTEM: Thumbnails + Click-to-expand Modal
+// =====================================================
+
+// =====================================================
+// CHART SYSTEM — Canvas-based, no inline string escaping
+// =====================================================
+
+let _currentCommuneCharts = null;
+
+function renderCommuneCharts(props) {
+  const container = document.getElementById('commune-charts');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const nombre = props['nombre'];
+  const region = props['region'] || '';
+  const cdRaw = COMMUNE_CHARTS[nombre];
+  if (!cdRaw) {
+    container.innerHTML = '<div style="text-align:center;color:#999;padding:16px;font-size:12px;">Sin datos de gráficos para esta comuna</div>';
+    return;
+  }
+
+  // Build a view of the chart data based on current event type
+  // For cold: remap cw_* keys to the standard keys used by drawing functions
+  const isCold = currentEventType === 'cold';
+  let cd;
+  if (isCold) {
+    cd = {
+      sparkline: cdRaw.cw_sparkline || [],
+      rr: cdRaw.cw_rr || {},
+      hist_mag_hist: cdRaw.cw_hist_mag_hist || [],
+      hist_mag_fut: cdRaw.cw_hist_mag_fut || [],
+      season_hist: cdRaw.cw_season_hist || [],
+      season_fut: cdRaw.cw_season_fut || [],
+      seasons: cdRaw.seasons,  // seasonality heatmap is shared
+      _isCold: true,
+    };
+  } else {
+    cd = cdRaw;
+  }
+  _currentCommuneCharts = { nombre, region, cd };
+
+  const eventLabel = isCold ? 'frío' : 'calor';
+  const charts = [
+    { id: 'spark', label: 'Magnitud máxima anual — olas de ' + eventLabel + ' (°C·h)', draw: drawSparkThumb },
+    { id: 'heatmap', label: 'Estacionalidad (temporada cálida/fría)', draw: drawHeatmapThumb },
+    { id: 'season', label: 'Eventos por mes — olas de ' + eventLabel, draw: drawSeasonThumb },
+    { id: 'rr', label: 'Risk Ratio por métrica — olas de ' + eventLabel, draw: drawRRThumb },
+    { id: 'hist', label: 'Distribución de magnitud — olas de ' + eventLabel + ' (hist. vs futuro)', draw: drawHistThumb },
+  ];
+
+  charts.forEach(ch => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'background:rgba(255,255,255,0.5);border-radius:10px;padding:8px;cursor:pointer;transition:box-shadow 0.2s;';
+    wrap.onmouseover = () => wrap.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+    wrap.onmouseout = () => wrap.style.boxShadow = 'none';
+    wrap.onclick = () => openChartDetail(ch.id);
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:10px;font-weight:600;color:var(--text-primary);margin-bottom:4px;display:flex;justify-content:space-between;';
+    title.innerHTML = `${ch.label} <span style="font-size:9px;color:var(--text-secondary);">▸ click</span>`;
+
+    const cvs = document.createElement('canvas');
+    cvs.width = 660; cvs.height = 130;
+    cvs.style.cssText = 'width:100%;height:65px;';
+    cvs.dataset.chartId = ch.id;
+
+    wrap.appendChild(title);
+    wrap.appendChild(cvs);
+    container.appendChild(wrap);
+
+    ch.draw(cvs, cd);
+
+    // Tooltip on hover for thumbnails
+    const tip = document.createElement('div');
+    tip.style.cssText = 'position:absolute;background:rgba(0,0,0,0.8);color:white;padding:3px 7px;border-radius:4px;font-size:10px;pointer-events:none;display:none;z-index:100;white-space:nowrap;';
+    wrap.style.position = 'relative';
+    wrap.appendChild(tip);
+    cvs.addEventListener('mousemove', (e) => {
+      const rect = cvs.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) / rect.width;
+      if (ch.id === 'spark' && cd.sparkline) {
+        const idx = Math.round(mx * (cd.sparkline.length - 1));
+        const year = 1980 + idx;
+        const val = cd.sparkline[Math.max(0, Math.min(idx, cd.sparkline.length-1))];
+        tip.textContent = `${year}: ${val.toFixed(1)} °C·h`;
+        tip.style.display = 'block';
+        tip.style.left = (e.clientX - rect.left) + 'px';
+        tip.style.top = '-18px';
+      }
+    });
+    cvs.addEventListener('mouseleave', () => tip.style.display = 'none');
+  });
+}
+
+// --- Thumbnail drawing functions ---
+
+function drawSparkThumb(cvs, cd) {
+  if (!cd.sparkline || cd.sparkline.length === 0) return;
+  const ctx = cvs.getContext('2d');
+  const w = cvs.width, h = cvs.height;
+  const data = cd.sparkline;
+  const isCold = cd._isCold || false;
+  const lineColor = isCold ? '#2171B5' : '#E85D3A';
+  const areaColor = isCold ? 'rgba(33,113,181,0.15)' : 'rgba(232,93,58,0.15)';
+  const futBg = isCold ? 'rgba(33,113,181,0.06)' : 'rgba(232,93,58,0.06)';
+
+  // Rolling mean
+  const smooth = data.map((_, i) => {
+    let s = 0, c = 0;
+    for (let j = Math.max(0,i-5); j <= Math.min(data.length-1,i+5); j++) { s += data[j]; c++; }
+    return s / c;
+  });
+
+  const maxV = Math.max(...smooth, 0.01);
+  const dx = w / (smooth.length - 1);
+
+  // Background periods
+  const hEnd = (2010-1980)*dx, fStart = (2050-1980)*dx, fEnd = (2080-1980)*dx;
+  ctx.fillStyle = 'rgba(68,119,170,0.06)'; ctx.fillRect(0, 0, hEnd, h);
+  ctx.fillStyle = futBg; ctx.fillRect(fStart, 0, fEnd-fStart, h);
+
+  // Area fill
+  ctx.beginPath(); ctx.moveTo(0, h);
+  smooth.forEach((v, i) => ctx.lineTo(i*dx, h - (v/maxV)*(h-6)));
+  ctx.lineTo(w, h); ctx.closePath();
+  ctx.fillStyle = areaColor; ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  smooth.forEach((v, i) => { const x = i*dx, y = h-(v/maxV)*(h-6); i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y); });
+  ctx.strokeStyle = lineColor; ctx.lineWidth = 2; ctx.stroke();
+
+  // Period labels
+  ctx.font = '16px sans-serif'; ctx.fillStyle = '#888'; ctx.textAlign = 'left';
+  ctx.fillText(maxV.toFixed(0)+' °C·h', 4, 14);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#4477AA'; ctx.fillText('1980', 2+hEnd, h-4);
+  ctx.fillStyle = lineColor; ctx.fillText('2100', w-4, h-4);
+}
+
+function drawRRThumb(cvs, cd) {
+  if (!cd.rr) return;
+  const ctx = cvs.getContext('2d');
+  const w = cvs.width, h = cvs.height;
+
+  const metrics = [
+    { key:'duration', label:'Duración', unit:'días', color:'#2166AC' },
+    { key:'intensity', label:'Intensidad', unit:'°C', color:'#E85D3A' },
+    { key:'magnitude', label:'Magnitud', unit:'°C·h', color:'#762A83' },
+  ];
+
+  const panelW = Math.floor(w / 3) - 4;
+  metrics.forEach((m, mi) => {
+    const pts = cd.rr[m.key];
+    const ox = mi * (panelW + 6) + 3;
+
+    // Panel background
+    ctx.fillStyle = 'rgba(0,0,0,0.02)';
+    ctx.fillRect(ox, 0, panelW, h);
+
+    // Title
+    ctx.font = '14px sans-serif'; ctx.fillStyle = m.color; ctx.textAlign = 'center';
+    ctx.fillText(m.label + ' (' + m.unit + ')', ox + panelW/2, 13);
+
+    if (!pts || pts.length < 2) {
+      ctx.fillStyle = '#ccc'; ctx.font = '14px sans-serif';
+      ctx.fillText('sin datos', ox + panelW/2, h/2);
+      return;
+    }
+
+    const yMax = Math.min(Math.max(...pts.map(p=>p[1]), 2), 50);
+    const xMin = Math.log10(Math.max(pts[0][0], 0.01));
+    const xMax = Math.log10(pts[pts.length-1][0]);
+    const xR = xMax - xMin || 1;
+
+    const toX = v => ox + 4 + (Math.log10(Math.max(v,0.01))-xMin)/xR*(panelW-8);
+    const toY = v => 20 + (h-28) - Math.min(v,yMax)/yMax*(h-32);
+
+    // RR=1 ref
+    ctx.setLineDash([3,3]); ctx.strokeStyle='#ccc'; ctx.lineWidth=0.5;
+    ctx.beginPath(); ctx.moveTo(ox+2, toY(1)); ctx.lineTo(ox+panelW-2, toY(1)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Area + line
+    ctx.beginPath(); ctx.moveTo(toX(pts[0][0]), toY(0));
+    pts.forEach(p => ctx.lineTo(toX(p[0]), toY(p[1])));
+    ctx.lineTo(toX(pts[pts.length-1][0]), toY(0)); ctx.closePath();
+    ctx.fillStyle = m.color + '18'; ctx.fill();
+
+    ctx.beginPath();
+    pts.forEach((p,i) => { const x=toX(p[0]),y=toY(p[1]); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.strokeStyle = m.color; ctx.lineWidth = 2; ctx.stroke();
+
+    // Max RR label
+    const maxRR = Math.max(...pts.map(p=>p[1]));
+    ctx.font = '13px sans-serif'; ctx.fillStyle = m.color; ctx.textAlign = 'right';
+    ctx.fillText(maxRR.toFixed(1)+'×', ox+panelW-4, h-4);
+  });
+}
+
+function drawHistThumb(cvs, cd) {
+  if (!cd.hist_mag_hist || cd.hist_mag_hist.length === 0) return;
+  const ctx = cvs.getContext('2d');
+  const w = cvs.width, h = cvs.height;
+  const isCold = cd._isCold || false;
+  const futColor = isCold ? 'rgba(33,113,181,0.5)' : 'rgba(232,93,58,0.5)';
+  const futLabel = isCold ? '#2171B5' : '#E85D3A';
+  const hBins = cd.hist_mag_hist, fBins = cd.hist_mag_fut || [];
+  const n = hBins.length;
+  const maxC = Math.max(...hBins.map(b=>b[1]), ...fBins.map(b=>b[1]), 1);
+  const bw = (w - 20) / n;
+
+  hBins.forEach((b, i) => {
+    const bh = (b[1]/maxC) * (h-20);
+    ctx.fillStyle = 'rgba(68,119,170,0.5)';
+    ctx.fillRect(10 + i*bw, h-10-bh, bw*0.45, bh);
+  });
+  fBins.forEach((b, i) => {
+    const bh = (b[1]/maxC) * (h-20);
+    ctx.fillStyle = futColor;
+    ctx.fillRect(10 + i*bw + bw*0.45, h-10-bh, bw*0.45, bh);
+  });
+
+  ctx.font = '16px sans-serif';
+  ctx.fillStyle = '#4477AA'; ctx.fillText('■ Hist', 6, 16);
+  ctx.fillStyle = futLabel; ctx.fillText('■ Futuro', 80, 16);
+  ctx.fillStyle = '#888'; ctx.fillText('°C·h', w-80, h-2);
+}
+
+function drawHeatmapThumb(cvs, cd) {
+  var s = cd.seasons;
+  if (!s || !s.warm || s.warm.length === 0) return;
+  var ctx = cvs.getContext('2d');
+  var w = cvs.width, h = cvs.height;
+  var n = s.warm.length;
+  var np = s.n_periods || 24;
+  var dy = h / n;
+  // Reorder to Jul-Jun: shift by np/2
+  var shift = Math.floor(np / 2);
+  var pw = w / np;
+
+  ctx.fillStyle = '#f4f0eb'; ctx.fillRect(0,0,w,h);
+
+  for (var yi = 0; yi < n; yi++) {
+    var y = yi * dy;
+    for (var pi = 0; pi < np; pi++) {
+      var p = (pi + shift) % np;
+      var wf = s.warm[yi][p] / 100;
+      var cf = s.cold[yi][p] / 100;
+      if (wf > 0.05) {
+        ctx.fillStyle = 'rgba(220,60,50,' + (wf * 0.55).toFixed(2) + ')';
+        ctx.fillRect(pi*pw, y, pw+0.5, Math.max(dy, 1));
+      } else if (cf > 0.05) {
+        ctx.fillStyle = 'rgba(40,100,180,' + (cf * 0.45).toFixed(2) + ')';
+        ctx.fillRect(pi*pw, y, pw+0.5, Math.max(dy, 1));
+      }
+    }
+  }
+
+  // Trend lines (wf/wl/cf/cl already in Jul-Jun coordinates)
+  if (s.wf && s.wl) {
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(200,30,30,0.7)';
+    ctx.setLineDash([3,2]);
+    // Warm start
+    ctx.beginPath(); var first = true;
+    for (var yi = 0; yi < n; yi += 3) {
+      if (s.wf[yi] >= 0) {
+        var px = s.wf[yi] * pw + pw/2;
+        first ? (ctx.moveTo(px, yi*dy), first=false) : ctx.lineTo(px, yi*dy);
+      }
+    }
+    ctx.stroke();
+    // Warm end
+    ctx.beginPath(); first = true;
+    for (var yi = 0; yi < n; yi += 3) {
+      if (s.wl[yi] >= 0) {
+        var px = s.wl[yi] * pw + pw/2;
+        first ? (ctx.moveTo(px, yi*dy), first=false) : ctx.lineTo(px, yi*dy);
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.font = '13px sans-serif'; ctx.fillStyle = '#888'; ctx.textAlign = 'left';
+  ctx.fillText('1980', 2, 12);
+  ctx.textAlign = 'right'; ctx.fillText('2100', w-2, h-6);
+}
+
+function drawSeasonThumb(cvs, cd) {
+  var sh = cd.season_hist, sf = cd.season_fut;
+  if (!sh || sh.length !== 12) return;
+  var ctx = cvs.getContext('2d');
+  var w = cvs.width, h = cvs.height;
+  var isCold = cd._isCold || false;
+  var futColor = isCold ? 'rgba(33,113,181,0.5)' : 'rgba(232,93,58,0.5)';
+  var futLabel = isCold ? '#2171B5' : '#E85D3A';
+  var months = ['E','F','M','A','M','J','J','A','S','O','N','D'];
+  var maxV = Math.max.apply(null, sh.concat(sf || [])) || 1;
+  var bw = (w - 30) / 12;
+
+  for (var i = 0; i < 12; i++) {
+    var bh_h = (sh[i]/maxV) * (h-24);
+    ctx.fillStyle = 'rgba(68,119,170,0.5)';
+    ctx.fillRect(15 + i*bw, h-10-bh_h, bw*0.45, bh_h);
+
+    if (sf && sf[i]) {
+      var bh_f = (sf[i]/maxV) * (h-24);
+      ctx.fillStyle = futColor;
+      ctx.fillRect(15 + i*bw + bw*0.45, h-10-bh_f, bw*0.45, bh_f);
+    }
+
+    ctx.fillStyle = '#888'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(months[i], 15 + i*bw + bw/2, h-1);
+  }
+
+  ctx.font = '15px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#4477AA'; ctx.fillText('■ Hist', 4, 13);
+  ctx.fillStyle = futLabel; ctx.fillText('■ Futuro', 70, 13);
+}
+
+// --- Detail modal (full-size with axes) ---
+
+function openChartDetail(chartId) {
+  const cc = _currentCommuneCharts;
+  if (!cc) return;
+
+  let modal = document.getElementById('chart-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'chart-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);';
+    modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+    document.body.appendChild(modal);
+  }
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:white;border-radius:16px;padding:20px;max-width:700px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.3);';
+  box.onclick = (e) => e.stopPropagation();
+
+  const _evLabel = currentEventType === 'cold' ? 'Olas de Frío' : 'Olas de Calor';
+  const titleMap = {
+    spark: 'Magnitud Máxima Anual de ' + _evLabel + ' (°C·h)',
+    heatmap: 'Estacionalidad — Expansión de la Temporada Cálida y Fría',
+    season: 'Distribución Mensual de ' + _evLabel,
+    rr: 'Risk Ratio — Cambio en Frecuencia de Excedencia',
+    hist: 'Distribución de Magnitud de ' + _evLabel,
+  };
+
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+  header.innerHTML = `<div><h3 style="margin:0;font-size:15px;">${titleMap[chartId] || chartId}</h3><div style="font-size:11px;color:#888;">${cc.nombre} (${cc.region}) · SSP3-7.0</div></div><button onclick="document.getElementById('chart-modal').style.display='none'" style="border:none;background:none;font-size:22px;cursor:pointer;color:#999;">✕</button>`;
+
+  const cvs = document.createElement('canvas');
+  cvs.width = 1200; cvs.height = 500;
+  cvs.style.cssText = 'width:100%;border:1px solid #eee;border-radius:8px;background:#fafafa;';
+
+  const caption = document.createElement('div');
+  caption.style.cssText = 'margin-top:10px;font-size:11px;color:#666;line-height:1.6;';
+
+  box.appendChild(header);
+  box.appendChild(cvs);
+  box.appendChild(caption);
+  modal.innerHTML = '';
+  modal.appendChild(box);
+  modal.style.display = 'flex';
+
+  // Draw after DOM attach
+  requestAnimationFrame(() => {
+    if (chartId === 'spark') {
+      drawSparkDetail(cvs, cc, caption);
+      // Interactive crosshair
+      const tipDiv = document.createElement('div');
+      tipDiv.style.cssText = 'position:absolute;background:rgba(0,0,0,0.85);color:white;padding:5px 10px;border-radius:6px;font-size:12px;pointer-events:none;display:none;z-index:101;';
+      cvs.parentElement.style.position = 'relative';
+      cvs.parentElement.appendChild(tipDiv);
+
+      cvs.addEventListener('mousemove', (e) => {
+        const rect = cvs.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / rect.width;
+        const data = cc.cd.sparkline;
+        if (!data) return;
+        const idx = Math.round(mx * (data.length - 1));
+        const year = 1980 + Math.max(0, Math.min(idx, data.length-1));
+        const val = data[Math.max(0, Math.min(idx, data.length-1))];
+        tipDiv.textContent = `${year}: ${val.toFixed(1)} °C·h`;
+        tipDiv.style.display = 'block';
+        tipDiv.style.left = (e.clientX - rect.left) + 'px';
+        tipDiv.style.top = '-30px';
+
+        // Crosshair vertical line
+        drawSparkDetail(cvs, cc, caption);
+        var ctx2 = cvs.getContext('2d');
+        var cvsX = 70 + idx / (data.length-1) * (cvs.width - 90);
+        ctx2.setLineDash([4,3]);
+        ctx2.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctx2.lineWidth = 1.5;
+        ctx2.beginPath();
+        ctx2.moveTo(cvsX, 30);
+        ctx2.lineTo(cvsX, cvs.height - 50);
+        ctx2.stroke();
+        ctx2.setLineDash([]);
+      });
+      cvs.addEventListener('mouseleave', () => {
+        tipDiv.style.display = 'none';
+        drawSparkDetail(cvs, cc, caption);
+      });
+    }
+    else if (chartId === 'rr') drawRRDetail(cvs, cc, caption);
+    else if (chartId === 'heatmap') drawHeatmapDetail(cvs, cc, caption);
+    else if (chartId === 'season') drawSeasonDetail(cvs, cc, caption);
+    else if (chartId === 'hist') drawHistDetail(cvs, cc, caption);
+  });
+}
+
+function drawSparkDetail(cvs, cc, captionEl) {
+  const ctx = cvs.getContext('2d');
+  const W = cvs.width, H = cvs.height;
+  const data = cc.cd.sparkline;
+  if (!data) return;
+
+  const pad = {l:70, r:20, t:30, b:50};
+  const pw = W-pad.l-pad.r, ph = H-pad.t-pad.b;
+
+  const smooth = data.map((_,i) => {
+    let s=0,c=0;
+    for(let j=Math.max(0,i-5);j<=Math.min(data.length-1,i+5);j++) {s+=data[j];c++;}
+    return s/c;
+  });
+  const maxV = Math.max(...smooth, 0.01);
+  const dx = pw / (smooth.length-1);
+
+  // Bg
+  ctx.fillStyle = '#fafafa'; ctx.fillRect(0,0,W,H);
+
+  // Grid
+  ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+  for(let t=0;t<=5;t++) {
+    const y = pad.t + ph - (t/5)*ph;
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(pad.l+pw,y); ctx.stroke();
+    ctx.fillStyle='#666'; ctx.font='20px sans-serif'; ctx.textAlign='right';
+    ctx.fillText((maxV*t/5).toFixed(1), pad.l-8, y+6);
+  }
+
+  // X labels
+  ctx.textAlign = 'center'; ctx.fillStyle='#666'; ctx.font='20px sans-serif';
+  [1980,1990,2000,2010,2020,2030,2040,2050,2060,2070,2080,2090,2100].forEach(yr => {
+    const x = pad.l + (yr-1980)*dx;
+    ctx.fillText(yr.toString(), x, H-pad.b+30);
+  });
+
+  // Period shading
+  const hEnd = pad.l+(2010-1980)*dx, fS = pad.l+(2050-1980)*dx, fE = pad.l+(2080-1980)*dx;
+  ctx.fillStyle='rgba(68,119,170,0.08)'; ctx.fillRect(pad.l, pad.t, hEnd-pad.l, ph);
+  ctx.fillStyle='rgba(232,93,58,0.08)'; ctx.fillRect(fS, pad.t, fE-fS, ph);
+
+  // Period labels
+  ctx.font='22px sans-serif'; ctx.textAlign='center';
+  ctx.fillStyle='#4477AA'; ctx.fillText('Histórico (1980-2010)', (pad.l+hEnd)/2, pad.t+20);
+  ctx.fillStyle='#E85D3A'; ctx.fillText('Futuro (2050-2080)', (fS+fE)/2, pad.t+20);
+
+  // Area
+  ctx.beginPath(); ctx.moveTo(pad.l, pad.t+ph);
+  smooth.forEach((v,i) => ctx.lineTo(pad.l+i*dx, pad.t+ph-(v/maxV)*ph));
+  ctx.lineTo(pad.l+pw, pad.t+ph); ctx.closePath();
+  ctx.fillStyle='rgba(232,93,58,0.12)'; ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  smooth.forEach((v,i) => {const x=pad.l+i*dx, y=pad.t+ph-(v/maxV)*ph; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.strokeStyle='#E85D3A'; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.stroke();
+
+  // Axis labels
+  ctx.save(); ctx.translate(16, pad.t+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.font='22px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#444';
+  ctx.fillText('Magnitud máxima anual (°C·h, media móvil 11 años)', 0, 0);
+  ctx.restore();
+
+  ctx.font='20px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#444';
+  ctx.fillText('Año', pad.l+pw/2, H-4);
+
+  captionEl.innerHTML = `<b>${cc.nombre}</b> (${cc.region}) · Escenario SSP3-7.0.<br>
+    <b>Magnitud máxima anual</b>: magnitud (°C·h) de la ola de calor más intensa de cada año en la comuna. Media móvil de 11 años.<br>
+    Magnitud = integral horaria de la excedencia sobre umbral. Umbral = percentil 90 de Tmax diaria (1980-2010).<br>
+    <b>Definición de ola de calor</b>: ≥3 días consecutivos con ≥1 hora sobre p90(Tmax).<br>
+    <b>Fuente</b>: CNRM-ALADIN64 corregido con ERA5-Land vía UQM (climQMBC v1.1).`;
+}
+
+function drawRRDetail(cvs, cc, captionEl) {
+  const ctx = cvs.getContext('2d');
+  const W = cvs.width, H = cvs.height;
+  const rr = cc.cd.rr;
+  if (!rr) return;
+
+  const metrics = [
+    {key:'duration', label:'Duración', unit:'días', color:'#2166AC'},
+    {key:'intensity', label:'Intensidad', unit:'°C', color:'#E85D3A'},
+    {key:'magnitude', label:'Magnitud', unit:'°C·h', color:'#762A83'},
+  ];
+
+  ctx.fillStyle='#fafafa'; ctx.fillRect(0,0,W,H);
+
+  // 3 separate subplots side by side
+  const gap = 20;
+  const panelW = Math.floor((W - gap*4) / 3);
+  const panelH = H - 80;
+  const padL = 55, padB = 40, padT = 35;
+
+  metrics.forEach((m, mi) => {
+    const pts = rr[m.key];
+    const ox = gap + mi * (panelW + gap);
+    const plotW = panelW - padL - 10;
+    const plotH = panelH - padT - padB;
+
+    // Panel title
+    ctx.font = 'bold 22px sans-serif'; ctx.fillStyle = m.color; ctx.textAlign = 'center';
+    ctx.fillText(m.label, ox + panelW/2, 24);
+
+    if (!pts || pts.length < 2) {
+      ctx.fillStyle = '#ccc'; ctx.font = '18px sans-serif';
+      ctx.fillText('Sin datos suficientes', ox + panelW/2, padT + plotH/2);
+      return;
+    }
+
+    const yMax = Math.min(Math.max(...pts.map(p=>p[1]), 2), 50);
+    const xMin = Math.log10(Math.max(pts[0][0], 0.01));
+    const xMax = Math.log10(pts[pts.length-1][0]);
+    const xR = xMax - xMin || 1;
+
+    const toX = v => ox + padL + (Math.log10(Math.max(v,0.01))-xMin)/xR*plotW;
+    const toY = v => padT + plotH - Math.min(v,yMax)/yMax*plotH;
+
+    // Y grid + labels
+    ctx.font = '16px sans-serif'; ctx.textAlign = 'right'; ctx.fillStyle = '#666';
+    [1,2,5,10,20,50].filter(v => v <= yMax*1.1).forEach(v => {
+      const y = toY(v);
+      ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(ox+padL, y); ctx.lineTo(ox+padL+plotW, y); ctx.stroke();
+      ctx.fillStyle = '#666'; ctx.fillText(v+'×', ox+padL-6, y+5);
+    });
+
+    // X axis ticks (values in the metric's units)
+    ctx.textAlign = 'center'; ctx.fillStyle = '#666'; ctx.font = '14px sans-serif';
+    const xVals = pts.map(p => p[0]);
+    const nTicks = 4;
+    for (let t = 0; t <= nTicks; t++) {
+      const logV = xMin + (t/nTicks) * xR;
+      const v = Math.pow(10, logV);
+      const x = ox + padL + (t/nTicks) * plotW;
+      ctx.fillText(v < 10 ? v.toFixed(1) : Math.round(v).toString(), x, padT + plotH + 20);
+    }
+    // X axis unit label
+    ctx.font = '16px sans-serif'; ctx.fillStyle = m.color;
+    ctx.fillText(m.unit, ox + padL + plotW/2, padT + plotH + 36);
+
+    // RR=1 reference
+    ctx.setLineDash([6,4]); ctx.strokeStyle='#999'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(ox+padL, toY(1)); ctx.lineTo(ox+padL+plotW, toY(1)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#999'; ctx.font='14px sans-serif'; ctx.textAlign='left';
+    ctx.fillText('RR=1', ox+padL+plotW+2, toY(1)+4);
+
+    // Area
+    ctx.beginPath(); ctx.moveTo(toX(pts[0][0]), toY(0));
+    pts.forEach(p => ctx.lineTo(toX(p[0]), toY(p[1])));
+    ctx.lineTo(toX(pts[pts.length-1][0]), toY(0)); ctx.closePath();
+    ctx.fillStyle = m.color + '18'; ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    pts.forEach((p,i) => { const x=toX(p[0]),y=toY(p[1]); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.strokeStyle=m.color; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.stroke();
+
+    // Max annotation
+    const maxP = pts.reduce((a,b) => b[1]>a[1]?b:a);
+    const mx = toX(maxP[0]), my = toY(maxP[1]);
+    ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI*2); ctx.fillStyle=m.color; ctx.fill();
+    ctx.font='bold 16px sans-serif'; ctx.textAlign='center'; ctx.fillStyle=m.color;
+    ctx.fillText(maxP[1].toFixed(1)+'×', mx, my-10);
+
+    // Y axis label (only first panel)
+    if (mi === 0) {
+      ctx.save(); ctx.translate(ox+8, padT+plotH/2); ctx.rotate(-Math.PI/2);
+      ctx.font='18px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#444';
+      ctx.fillText('Risk Ratio (× más frecuente en futuro)', 0, 0);
+      ctx.restore();
+    }
+  });
+
+  captionEl.innerHTML = `<b>${cc.nombre}</b> (${cc.region}) · Escenario SSP3-7.0.<br>
+    <b>Risk Ratio</b> = P(evento futuro ≥ umbral) / P(evento histórico ≥ umbral). Valores >1 indican que eventos de esa severidad son más frecuentes en el futuro.<br>
+    Eje X: umbral de severidad en las unidades de cada métrica (escala log). Eje Y: multiplicador de frecuencia.<br>
+    <b>Períodos</b>: Histórico 1980-2010 vs. Futuro 2050-2080.<br>
+    <b>Fuente</b>: CNRM-ALADIN64 corregido con ERA5-Land vía UQM (climQMBC v1.1).`;
+}
+
+function drawHeatmapDetail(cvs, cc, captionEl) {
+  var ctx = cvs.getContext('2d');
+  var W = cvs.width, H = cvs.height;
+  var s = cc.cd.seasons;
+  if (!s || !s.warm) return;
+
+  var pad = {l:60, r:40, t:35, b:55};
+  var pw = W-pad.l-pad.r, ph = H-pad.t-pad.b;
+  var n = s.warm.length;
+  var np = s.n_periods || 24;
+  var dy = ph / n;
+  var shift = Math.floor(np / 2);
+  var cellW = pw / np;
+
+  ctx.fillStyle = '#f5f1ec'; ctx.fillRect(0,0,W,H);
+
+  // Draw cells (shifted to Jul-Jun)
+  for (var yi = 0; yi < n; yi++) {
+    var y = pad.t + yi * dy;
+    for (var pi = 0; pi < np; pi++) {
+      var p = (pi + shift) % np;
+      var wf = s.warm[yi][p] / 100;
+      var cf = s.cold[yi][p] / 100;
+      if (wf > 0.05) {
+        ctx.fillStyle = 'rgba(210,50,40,' + (wf * 0.5).toFixed(2) + ')';
+        ctx.fillRect(pad.l + pi*cellW, y, cellW+0.5, Math.max(dy, 1.2));
+      } else if (cf > 0.05) {
+        ctx.fillStyle = 'rgba(40,100,180,' + (cf * 0.4).toFixed(2) + ')';
+        ctx.fillRect(pad.l + pi*cellW, y, cellW+0.5, Math.max(dy, 1.2));
+      }
+    }
+  }
+
+  // Trend lines (warm season start/end)
+  if (s.wf && s.wl) {
+    // Compute linear regression for trend
+    // Robust linear fit: filter outliers with IQR before regression
+    function robustLinfit(arr) {
+      var valid = [];
+      for (var i = 0; i < arr.length; i++) {
+        if (arr[i] >= 0) valid.push({x: i, y: arr[i]});
+      }
+      if (valid.length < 20) return null;
+
+      // IQR filter on y values
+      var ys = valid.map(function(v) { return v.y; }).sort(function(a,b) { return a-b; });
+      var q1 = ys[Math.floor(ys.length * 0.25)];
+      var q3 = ys[Math.floor(ys.length * 0.75)];
+      var iqr = q3 - q1;
+      var lo = q1 - 1.5 * iqr;
+      var hi = q3 + 1.5 * iqr;
+      var filtered = valid.filter(function(v) { return v.y >= lo && v.y <= hi; });
+      if (filtered.length < 15) return null;
+
+      var mx = 0, my = 0;
+      for (var i = 0; i < filtered.length; i++) { mx += filtered[i].x; my += filtered[i].y; }
+      mx /= filtered.length; my /= filtered.length;
+      var num = 0, den = 0;
+      for (var i = 0; i < filtered.length; i++) {
+        num += (filtered[i].x - mx) * (filtered[i].y - my);
+        den += (filtered[i].x - mx) * (filtered[i].x - mx);
+      }
+      var slope = den > 0 ? num / den : 0;
+      return {slope: slope, intercept: my - slope * mx};
+    }
+
+    // Only warm season trends (cold wraps around Jul edges, can't do linear)
+    var fitStart = robustLinfit(s.wf);
+    var fitEnd = robustLinfit(s.wl);
+
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([8,5]);
+    ctx.strokeStyle = 'rgba(190,30,30,0.75)';
+
+    if (fitStart) {
+      ctx.beginPath();
+      ctx.moveTo(pad.l + fitStart.intercept * cellW + cellW/2, pad.t);
+      ctx.lineTo(pad.l + (fitStart.slope*(n-1)+fitStart.intercept) * cellW + cellW/2, pad.t+ph);
+      ctx.stroke();
+    }
+    if (fitEnd) {
+      ctx.beginPath();
+      ctx.moveTo(pad.l + fitEnd.intercept * cellW + cellW/2, pad.t);
+      ctx.lineTo(pad.l + (fitEnd.slope*(n-1)+fitEnd.intercept) * cellW + cellW/2, pad.t+ph);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Month labels (Jul-Jun)
+  var months = ['Jul','Ago','Sep','Oct','Nov','Dic','Ene','Feb','Mar','Abr','May','Jun'];
+  ctx.font = '16px sans-serif'; ctx.fillStyle = '#444'; ctx.textAlign = 'center';
+  for (var mi = 0; mi < 12; mi++) {
+    var x = pad.l + (mi * np / 12) * cellW;
+    ctx.fillText(months[mi], x + cellW, H-pad.b+20);
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t+ph); ctx.stroke();
+  }
+
+  // Year labels
+  ctx.textAlign = 'right'; ctx.font = '15px sans-serif'; ctx.fillStyle = '#666';
+  for (var yr = 1980; yr <= 2100; yr += 10) {
+    var y = pad.t + (yr-1980) * dy;
+    ctx.fillText(yr.toString(), pad.l-6, y+5);
+  }
+
+  // Legend
+  ctx.font = '17px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(210,50,40,0.5)'; ctx.fillRect(pad.l+8, pad.t-26, 16, 8);
+  ctx.fillStyle = '#c03020'; ctx.fillText('Cálido (Tmax > p75)', pad.l+30, pad.t-18);
+  ctx.fillStyle = 'rgba(40,100,180,0.4)'; ctx.fillRect(pad.l+280, pad.t-26, 16, 8);
+  ctx.fillStyle = '#1e5090'; ctx.fillText('Frío (Tmin < p25)', pad.l+302, pad.t-18);
+  // Trend line legend
+  ctx.setLineDash([6,4]); ctx.strokeStyle = 'rgba(190,30,30,0.75)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(pad.l+520, pad.t-22); ctx.lineTo(pad.l+550, pad.t-22); ctx.stroke();
+  ctx.setLineDash([]); ctx.fillStyle = '#c03020';
+  ctx.fillText('Tendencia inicio/fin verano', pad.l+556, pad.t-18);
+
+  // Axis labels
+  ctx.save(); ctx.translate(14, pad.t+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.font = '18px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#444';
+  ctx.fillText('Año', 0, 0); ctx.restore();
+
+  ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#444';
+  ctx.fillText('Mes (Jul-Jun, verano austral al centro)', pad.l+pw/2, H-8);
+
+  // Color scale
+  var csX = W-30, csY = pad.t, csH = ph/2;
+  for (var i = 0; i < csH; i++) {
+    ctx.fillStyle = 'rgba(210,50,40,' + ((1-i/csH)*0.5).toFixed(2) + ')';
+    ctx.fillRect(csX, csY+i, 14, 1);
+  }
+  for (var i = 0; i < csH; i++) {
+    ctx.fillStyle = 'rgba(40,100,180,' + ((1-i/csH)*0.4).toFixed(2) + ')';
+    ctx.fillRect(csX, csY+csH+10+i, 14, 1);
+  }
+  ctx.font = '11px sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#888';
+  ctx.fillText('100%', csX, csY-4); ctx.fillText('0%', csX, csY+csH+4);
+  ctx.fillText('100%', csX, csY+csH+6); ctx.fillText('0%', csX, csY+2*csH+14);
+
+  captionEl.innerHTML = '<b>' + cc.nombre + '</b> (' + cc.region + ') · Escenario SSP3-7.0.<br>' +
+    'Cada celda = fracción de días del semi-mes que supera el umbral. Resolución: 24 períodos/año (~15 días c/u).<br>' +
+    '<span style="color:#c03020">■</span> Cálido: % días con Tmax > p75 (1980-2010). ' +
+    '<span style="color:#1e5090">■</span> Frío: % días con Tmin < p25.<br>' +
+    '<b>Líneas de tendencia</b> (punteadas): regresión lineal del inicio/fin de temporada cálida y fría. ' +
+    'La convergencia de las líneas rojas indica expansión de la temporada cálida.<br>' +
+    '<b>Fuente</b>: CNRM-ALADIN64 corregido con ERA5-Land vía UQM.';
+}
+
+function drawSeasonDetail(cvs, cc, captionEl) {
+  var ctx = cvs.getContext('2d');
+  var W = cvs.width, H = cvs.height;
+  var sh = cc.cd.season_hist || [];
+  var sf = cc.cd.season_fut || [];
+  if (sh.length !== 12) return;
+
+  var pad = {l:70, r:20, t:40, b:55};
+  var pw = W-pad.l-pad.r, ph = H-pad.t-pad.b;
+  var months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var maxV = Math.max.apply(null, sh.concat(sf)) || 1;
+  var bw = pw / 12;
+
+  ctx.fillStyle = '#fafafa'; ctx.fillRect(0,0,W,H);
+
+  // Grid
+  for (var t = 0; t <= 4; t++) {
+    var y = pad.t + ph - (t/4)*ph;
+    ctx.strokeStyle = '#eee'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l+pw, y); ctx.stroke();
+    ctx.fillStyle = '#666'; ctx.font = '20px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText((maxV*t/4).toFixed(1), pad.l-8, y+6);
+  }
+
+  // Bars
+  for (var i = 0; i < 12; i++) {
+    var x0 = pad.l + i*bw;
+    // Historical
+    var bh_h = (sh[i]/maxV) * ph;
+    ctx.fillStyle = 'rgba(68,119,170,0.6)';
+    ctx.fillRect(x0+4, pad.t+ph-bh_h, bw*0.42, bh_h);
+    // Future
+    var bh_f = sf[i] ? (sf[i]/maxV)*ph : 0;
+    ctx.fillStyle = 'rgba(232,93,58,0.6)';
+    ctx.fillRect(x0+4+bw*0.42, pad.t+ph-bh_f, bw*0.42, bh_f);
+    // Month label
+    ctx.fillStyle = '#444'; ctx.font = '18px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(months[i], x0+bw/2, H-pad.b+25);
+  }
+
+  // Summer highlight
+  ctx.fillStyle = 'rgba(232,93,58,0.05)';
+  ctx.fillRect(pad.l + 10*bw, pad.t, 2*bw, ph); // Nov-Dic
+  ctx.fillRect(pad.l, pad.t, 2*bw, ph); // Ene-Feb
+
+  // Legend
+  ctx.font = '22px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#4477AA'; ctx.fillRect(pad.l+10, pad.t-30, 22, 10);
+  ctx.fillText('Histórico 1980-2010', pad.l+38, pad.t-20);
+  ctx.fillStyle = '#E85D3A'; ctx.fillRect(pad.l+280, pad.t-30, 22, 10);
+  ctx.fillText('Futuro 2050-2080 (SSP3-7.0)', pad.l+308, pad.t-20);
+
+  // Axis labels
+  ctx.save(); ctx.translate(16, pad.t+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.font = '22px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#444';
+  ctx.fillText('Olas de calor por mes (eventos/año)', 0, 0);
+  ctx.restore();
+
+  ctx.font = '20px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#444';
+  ctx.fillText('Mes', pad.l+pw/2, H-6);
+
+  captionEl.innerHTML = '<b>' + cc.nombre + '</b> (' + cc.region + ') · Escenario SSP3-7.0.<br>' +
+    '<b>Estacionalidad</b>: número promedio de ' + (cc.cd._isCold ? 'olas de frío' : 'olas de calor') + ' que comienzan en cada mes del año.<br>' +
+    'El sombreado rosa marca los meses de verano austral (Nov-Feb), cuando se concentran los eventos extremos.<br>' +
+    'La expansión de la temporada de calor hacia otoño/primavera es un indicador clave del cambio climático.<br>' +
+    '<b>Fuente</b>: CNRM-ALADIN64 corregido con ERA5-Land vía UQM.';
+}
+
+function drawHistDetail(cvs, cc, captionEl) {
+  const ctx = cvs.getContext('2d');
+  const W = cvs.width, H = cvs.height;
+  const hBins = cc.cd.hist_mag_hist, fBins = cc.cd.hist_mag_fut;
+  if (!hBins || hBins.length===0) return;
+
+  const pad = {l:70, r:20, t:30, b:55};
+  const pw = W-pad.l-pad.r, ph = H-pad.t-pad.b;
+  const n = hBins.length;
+  const maxC = Math.max(...hBins.map(b=>b[1]), ...(fBins||[]).map(b=>b[1]), 1);
+  const bw = pw / n;
+
+  ctx.fillStyle='#fafafa'; ctx.fillRect(0,0,W,H);
+
+  // Grid
+  ctx.strokeStyle='#eee'; ctx.lineWidth=1;
+  for(let t=0;t<=4;t++) {
+    const y = pad.t + ph - (t/4)*ph;
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(pad.l+pw,y); ctx.stroke();
+    ctx.fillStyle='#666'; ctx.font='20px sans-serif'; ctx.textAlign='right';
+    ctx.fillText(Math.round(maxC*t/4).toString(), pad.l-8, y+6);
+  }
+
+  // Bars
+  hBins.forEach((b,i) => {
+    const bh = (b[1]/maxC)*ph;
+    ctx.fillStyle='rgba(68,119,170,0.55)';
+    ctx.fillRect(pad.l+i*bw+2, pad.t+ph-bh, bw*0.45-2, bh);
+  });
+  (fBins||[]).forEach((b,i) => {
+    const bh = (b[1]/maxC)*ph;
+    ctx.fillStyle='rgba(232,93,58,0.55)';
+    ctx.fillRect(pad.l+i*bw+bw*0.45+1, pad.t+ph-bh, bw*0.45-2, bh);
+  });
+
+  // X labels
+  ctx.font='18px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#666';
+  hBins.forEach((b,i) => {
+    if (i%2===0) ctx.fillText(b[0].toFixed(0), pad.l+i*bw+bw/2, H-pad.b+22);
+  });
+
+  // Legend
+  ctx.font='22px sans-serif'; ctx.textAlign='left';
+  ctx.fillStyle='rgba(68,119,170,0.7)'; ctx.fillRect(pad.l+10,pad.t+10,20,12);
+  ctx.fillStyle='#4477AA'; ctx.fillText('Histórico 1980-2010', pad.l+36, pad.t+22);
+  ctx.fillStyle='rgba(232,93,58,0.7)'; ctx.fillRect(pad.l+10,pad.t+32,20,12);
+  ctx.fillStyle='#E85D3A'; ctx.fillText('Futuro 2050-2080 (SSP3-7.0)', pad.l+36, pad.t+44);
+
+  // Axis labels
+  ctx.save(); ctx.translate(16, pad.t+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.font='22px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#444';
+  ctx.fillText('Número de eventos', 0, 0);
+  ctx.restore();
+
+  ctx.font='20px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#444';
+  ctx.fillText('Magnitud (°C·h)', pad.l+pw/2, H-6);
+
+  captionEl.innerHTML = `<b>${cc.nombre}</b> (${cc.region}) · Escenario SSP3-7.0.<br>
+    Distribución de la magnitud de ${cc.cd._isCold ? 'olas de frío' : 'olas de calor'} (°C·h = integral horaria de excedencia sobre umbral).<br>
+    Períodos: Histórico 1980-2010 vs. Futuro 2050-2080.<br>
+    Fuente: CNRM-ALADIN64 corregido con ERA5-Land vía UQM.`;
+}
+
+// Legacy — keep for backward compat
+function showChartModal(title, svgContent, caption) {
+  let modal = document.getElementById('chart-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'chart-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);';
+    modal.onclick = () => modal.style.display = 'none';
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = `
+    <div onclick="event.stopPropagation()" style="background:white;border-radius:16px;padding:24px;max-width:650px;width:90%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:15px;">${title}</h3>
+        <button onclick="document.getElementById('chart-modal').style.display='none'" style="border:none;background:none;font-size:20px;cursor:pointer;color:#666;">✕</button>
+      </div>
+      <div style="border:1px solid #eee;border-radius:8px;padding:8px;background:#fafafa;">
+        ${svgContent}
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:#666;line-height:1.5;">
+        ${caption}
+      </div>
+    </div>`;
+  modal.style.display = 'flex';
+}
+
+function _sparkSvg(w, h, data, showAxes) {
+  // 11-year rolling mean
+  const smooth = [];
+  for (let i = 0; i < data.length; i++) {
+    let sum = 0, cnt = 0;
+    for (let j = Math.max(0, i - 5); j <= Math.min(data.length - 1, i + 5); j++) {
+      sum += data[j]; cnt++;
+    }
+    smooth.push(sum / cnt);
+  }
+
+  const maxVal = Math.max(...smooth, 0.01);
+  const pad = showAxes ? 35 : 2;
+  const padB = showAxes ? 22 : 2;
+  const pw = w - pad - 4, ph = h - padB - 4;
+  const dx = pw / (smooth.length - 1);
+
+  let path = '', area = `M ${pad},${h - padB} `;
+  smooth.forEach((v, i) => {
+    const x = pad + i * dx;
+    const y = (h - padB) - (v / maxVal) * ph;
+    path += (i === 0 ? 'M ' : 'L ') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+    area += 'L ' + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+  });
+  area += `L ${pad + pw},${h - padB} Z`;
+
+  const histEnd = pad + (2010 - 1980) * dx;
+  const futStart = pad + (2050 - 1980) * dx;
+  const futEnd = pad + (2080 - 1980) * dx;
+
+  let axes = '';
+  if (showAxes) {
+    // Y axis ticks
+    for (let t = 0; t <= 4; t++) {
+      const val = (maxVal * t / 4);
+      const y = (h - padB) - (t / 4) * ph;
+      axes += `<text x="${pad-3}" y="${y+3}" font-size="8" fill="#666" text-anchor="end">${val < 10 ? val.toFixed(1) : Math.round(val)}</text>`;
+      axes += `<line x1="${pad}" y1="${y}" x2="${pad+pw}" y2="${y}" stroke="#eee" stroke-width="0.5"/>`;
+    }
+    // X axis labels
+    [1980,2000,2020,2040,2060,2080,2100].forEach(yr => {
+      const x = pad + (yr - 1980) * dx;
+      axes += `<text x="${x}" y="${h-padB+14}" font-size="8" fill="#666" text-anchor="middle">${yr}</text>`;
+    });
+    axes += `<text x="${pad-3}" y="10" font-size="8" fill="#444" text-anchor="end" font-weight="600">ev/año</text>`;
+  }
+
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:${h}px;">
+    <defs><linearGradient id="spG${w}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E85D3A" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#E85D3A" stop-opacity="0.03"/>
+    </linearGradient></defs>
+    ${axes}
+    <rect x="${pad}" y="0" width="${histEnd-pad}" height="${h-padB}" fill="rgba(68,119,170,0.06)"/>
+    <rect x="${futStart}" y="0" width="${futEnd-futStart}" height="${h-padB}" fill="rgba(232,93,58,0.06)"/>
+    <path d="${area}" fill="url(#spG${w})"/>
+    <path d="${path}" fill="none" stroke="#E85D3A" stroke-width="${showAxes?2:1.5}" stroke-linejoin="round"/>
+    <line x1="${histEnd}" y1="2" x2="${histEnd}" y2="${h-padB}" stroke="#4477AA" stroke-width="0.7" stroke-dasharray="3,2"/>
+    <line x1="${futStart}" y1="2" x2="${futStart}" y2="${h-padB}" stroke="#E85D3A" stroke-width="0.7" stroke-dasharray="3,2"/>
+    ${showAxes ? `<text x="${histEnd}" y="10" font-size="7" fill="#4477AA" text-anchor="middle">2010</text>
+    <text x="${futStart}" y="10" font-size="7" fill="#E85D3A" text-anchor="middle">2050</text>` : ''}
+  </svg>`;
+}
+
+function buildSparkline(props, sc) {
+  const nombre = props['nombre'];
+  const region = props['region'] || '';
+  const cd = COMMUNE_CHARTS[nombre];
+  if (!cd || !cd.sparkline || cd.sparkline.length === 0)
+    return '<div style="color:var(--text-secondary);font-size:11px;text-align:center;padding:12px;">Sin datos</div>';
+
+  const thumb = _sparkSvg(340, 55, cd.sparkline, false);
+  const detailed = _sparkSvg(580, 200, cd.sparkline, true);
+  const _spEvt = currentEventType === 'cold' ? 'olas de frío' : 'olas de calor';
+  const caption = `<b>${nombre}</b> (${region}) · SSP3-7.0 · Frecuencia anual de ${_spEvt} (eventos/año, media móvil 11 años).<br>
+    <span style="color:#4477AA">▮</span> Período histórico (1980–2010) · <span style="color:#E85D3A">▮</span> Período futuro (2050–2080).<br>
+    Fuente: CNRM-ALADIN64 bias-corrected con ERA5-Land vía UQM. Definición: ≥3 días consecutivos con alguna hora sobre p90(Tmax 1980-2010).`;
+
+  const modalTitle = `Tendencia temporal — ${nombre}`;
+  const escaped = detailed.replace(/'/g, "\\'").replace(/\n/g, '');
+  const escapedCaption = caption.replace(/'/g, "\\'").replace(/\n/g, '');
+
+  return `<div onclick="showChartModal('${modalTitle}', '${escaped}', '${escapedCaption}')" style="cursor:pointer;border-radius:8px;padding:4px;transition:background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.04)'" onmouseout="this.style.background='none'">
+    ${thumb}
+    <div style="font-size:8px;color:var(--text-secondary);text-align:center;margin-top:1px;">click para expandir</div>
+  </div>`;
+}
+
+function _rrSvg(w, h, rrData, showAxes) {
+  const metrics = [
+    { key: 'duration', label: 'Duración (días)', color: '#2166AC' },
+    { key: 'intensity', label: 'Intensidad (°C)', color: '#E85D3A' },
+    { key: 'magnitude', label: 'Magnitud (°C·h)', color: '#762A83' },
+  ];
+
+  const pad = showAxes ? 40 : 4;
+  const padB = showAxes ? 24 : 4;
+  const padR = showAxes ? 10 : 4;
+  const pw = w - pad - padR, ph = h - padB - 8;
+
+  // Find global ranges
+  let allX = [], allY = [];
+  metrics.forEach(m => {
+    const pts = rrData[m.key];
+    if (pts) pts.forEach(p => { allX.push(p[0]); allY.push(p[1]); });
+  });
+  if (allX.length === 0) return `<svg viewBox="0 0 ${w} ${h}"><text x="${w/2}" y="${h/2}" text-anchor="middle" font-size="11" fill="#999">Sin datos</text></svg>`;
+
+  const xMin = Math.log10(Math.max(Math.min(...allX), 0.01));
+  const xMax = Math.log10(Math.max(...allX));
+  const yMax = Math.min(Math.max(...allY, 2), 60);
+
+  const toX = v => pad + (Math.log10(Math.max(v, 0.01)) - xMin) / (xMax - xMin) * pw;
+  const toY = v => (h - padB) - Math.min(v, yMax) / yMax * ph;
+
+  let svgContent = '';
+
+  // Axes
+  if (showAxes) {
+    // Y axis
+    [1, 2, 5, 10, 20, 50].filter(v => v <= yMax).forEach(v => {
+      const y = toY(v);
+      svgContent += `<line x1="${pad}" y1="${y}" x2="${pad+pw}" y2="${y}" stroke="#eee" stroke-width="0.5"/>`;
+      svgContent += `<text x="${pad-4}" y="${y+3}" font-size="9" fill="#666" text-anchor="end">${v}×</text>`;
+    });
+    svgContent += `<text x="4" y="14" font-size="9" fill="#444" font-weight="600">Risk Ratio</text>`;
+    // X axis label
+    svgContent += `<text x="${pad+pw/2}" y="${h-2}" font-size="9" fill="#666" text-anchor="middle">Umbral de severidad (escala log)</text>`;
+  }
+
+  // RR=1 reference line
+  const y1 = toY(1);
+  svgContent += `<line x1="${pad}" y1="${y1}" x2="${pad+pw}" y2="${y1}" stroke="#999" stroke-width="0.7" stroke-dasharray="4,3"/>`;
+  if (showAxes) svgContent += `<text x="${pad+pw+2}" y="${y1+3}" font-size="8" fill="#999">1×</text>`;
+
+  // Plot each metric
+  let legendY = showAxes ? 28 : 6;
+  metrics.forEach(m => {
+    const pts = rrData[m.key];
+    if (!pts || pts.length < 2) return;
+
+    let path = '', areaPath = `M ${toX(pts[0][0]).toFixed(1)},${(h-padB).toFixed(1)} `;
+    pts.forEach((p, i) => {
+      const x = toX(p[0]), y = toY(p[1]);
+      path += (i === 0 ? 'M ' : 'L ') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+      areaPath += 'L ' + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+    });
+    areaPath += `L ${toX(pts[pts.length-1][0]).toFixed(1)},${(h-padB).toFixed(1)} Z`;
+
+    svgContent += `<path d="${areaPath}" fill="${m.color}" fill-opacity="0.07"/>`;
+    svgContent += `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="${showAxes?2:1.3}" stroke-linejoin="round"/>`;
+
+    // Legend
+    if (showAxes) {
+      const maxRR = Math.max(...pts.map(p => p[1]));
+      svgContent += `<rect x="${pad+6}" y="${legendY-8}" width="10" height="3" rx="1" fill="${m.color}"/>`;
+      svgContent += `<text x="${pad+20}" y="${legendY-5}" font-size="8" fill="${m.color}">${m.label} (max ${maxRR.toFixed(1)}×)</text>`;
+      legendY += 14;
+    }
+  });
+
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:${h}px;">${svgContent}</svg>`;
+}
+
+function buildRRPlots(props, sc) {
+  const nombre = props['nombre'];
+  const region = props['region'] || '';
+  const cd = COMMUNE_CHARTS[nombre];
+  if (!cd || !cd.rr) return '<div style="color:var(--text-secondary);font-size:11px;text-align:center;padding:12px;">Sin datos</div>';
+
+  const thumb = _rrSvg(340, 70, cd.rr, false);
+  const detailed = _rrSvg(580, 260, cd.rr, true);
+  const caption = `<b>${nombre}</b> (${region}) · SSP3-7.0 · Risk Ratio = P(futuro ≥ umbral) / P(histórico ≥ umbral).<br>
+    <span style="color:#2166AC">▮</span> Duración · <span style="color:#E85D3A">▮</span> Intensidad · <span style="color:#762A83">▮</span> Magnitud.<br>
+    Valores >1 indican mayor frecuencia en el futuro. Eje X en escala logarítmica.<br>
+    Períodos: Histórico 1980–2010, Futuro 2050–2080. Fuente: CNRM-ALADIN64 (ERA5-Land UQM).`;
+
+  const modalTitle = `Risk Ratio — ${nombre}`;
+  const escaped = detailed.replace(/'/g, "\\'");
+  const escapedCaption = caption.replace(/'/g, "\\'");
+
+  return `<div onclick="showChartModal('${modalTitle}', '${escaped}', '${escapedCaption}')" style="cursor:pointer;border-radius:8px;padding:4px;transition:background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.04)'" onmouseout="this.style.background='none'">
+    ${thumb}
+    <div style="font-size:8px;color:var(--text-secondary);text-align:center;margin-top:1px;">click para expandir</div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------
+// Map click (outside communes)
+// ---------------------------------------------------------------
+map.on('click', function () {
+  closePanel();
+  if (geojsonLayer) geojsonLayer.resetStyle();
+});
+
+// ---------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------
+document.querySelectorAll('input[name="scenario"]').forEach(radio => {
+  radio.addEventListener('change', function () {
+    currentScenario = this.value;
+    renderLayer();
+  });
+});
+
+document.querySelectorAll('input[name="metric"]').forEach(radio => {
+  radio.addEventListener('change', function () {
+    currentMetric = this.value;
+    renderLayer();
+  });
+});
+
+// Event type toggle (Heat / Cold)
+document.querySelectorAll('.event-pill').forEach(btn => {
+  btn.addEventListener('click', function () {
+    const newType = this.dataset.type;
+    if (newType === currentEventType) return;
+    currentEventType = newType;
+
+    // Update pill active state
+    document.querySelectorAll('.event-pill').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+
+    // Show/hide metric options
+    document.querySelectorAll('#metric-sidebar [data-event]').forEach(el => {
+      el.style.display = el.dataset.event === newType ? '' : 'none';
+    });
+
+    // Select the first metric of the new event type
+    const firstRadio = document.querySelector('#metric-sidebar [data-event="' + newType + '"] input[type="radio"]');
+    if (firstRadio) {
+      firstRadio.checked = true;
+      currentMetric = firstRadio.value;
+    }
+
+    // Update accent color for radio buttons
+    const accentColor = newType === 'cold' ? '#084594' : '#c0392b';
+    document.querySelectorAll('#metric-sidebar input[type="radio"]').forEach(r => {
+      r.style.accentColor = accentColor;
+    });
+
+    renderLayer();
+  });
+});
+
+document.getElementById('panel-close').addEventListener('click', closePanel);
+
+// ---------------------------------------------------------------
+// Kick off
+// ---------------------------------------------------------------
+window.addEventListener('load', function () {
+  loadGeoData().then(() => {
+    try { renderLayer(); } catch (e) { console.error('renderLayer:', e); }
+    if (COMMUNES_DATA && COMMUNES_DATA.features && COMMUNES_DATA.features.length > 0) {
+      try {
+        const lyr = L.geoJSON(COMMUNES_DATA);
+        map.fitBounds(lyr.getBounds(), { padding: [40, 40] });
+      } catch (e) { console.warn('Could not fit bounds:', e); }
+    }
+    const loadingEl = document.getElementById('loading');
+    loadingEl.classList.add('hidden');
+    setTimeout(() => loadingEl.style.display = 'none', 500);
+  });
+});
+</script>
+
+</body>
+</html>
