@@ -1184,13 +1184,14 @@ function buildPanelBody(props) {
   const cwRp5   = fmtRP(props[sc + 'cw_rp_5yr']);
   const cwRp10  = fmtRP(props[sc + 'cw_rp_10yr']);
   const cwMult  = props[sc + 'cw_return_period_multiplier'];
-  // For cold: multiplier < 1 means less frequent. Show as "X% menos frecuente" or "desaparece"
   let cwMultStr = '—';
   if (cwMult != null && !isNaN(cwMult)) {
     const m = parseFloat(cwMult);
     if (m === 0) cwMultStr = 'desaparece';
     else if (m < 0.01) cwMultStr = 'prácticamente desaparece';
-    else cwMultStr = Math.round((1 - m) * 100) + '% menos frecuente';
+    else if (m < 1) cwMultStr = Math.round((1 - m) * 100) + '% menos frecuente';
+    else if (m === 1) cwMultStr = 'sin cambio';
+    else cwMultStr = m.toFixed(1) + '× más frecuente';
   }
 
   if (isCold) {
@@ -1229,7 +1230,7 @@ function buildPanelBody(props) {
       <div id="return-period-box" style="background:linear-gradient(135deg,rgba(8,69,148,0.08),rgba(8,69,148,0.03));border-color:rgba(8,69,148,0.15);">
         <div id="return-period-text">
           Un evento de frío histórico de <strong style="color:#084594;">10 años</strong>
-          en el futuro <strong style="color:#084594;">${cwMultStr}</strong>.
+          en el futuro: <strong style="color:#084594;">${cwMultStr}</strong>.
         </div>
         <div class="rp-row">
           <div class="rp-pill" style="background:rgba(8,69,148,0.10);">
