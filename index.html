@@ -772,9 +772,9 @@ const METRICS = {
     eventType: 'heat',
   },
   return_period_multiplier: {
-    label:   'Período de retorno ×',
+    label:   'Período de retorno (10yr)',
     unit:    '×',
-    domain:  [1, 5],
+    domain:  [1, 8],
     format:  v => v.toFixed(1) + '×',
     isRatio: true,
     eventType: 'heat',
@@ -1093,13 +1093,29 @@ function fmtFreq(v) {
 }
 
 function fmtRP(v) {
-  /* Format return period multiplier */
   if (v == null || isNaN(v)) return '—';
   const n = parseFloat(v);
   if (n === 0) return '—';
   if (n < 0.01) return '~0';
   if (n < 1) return n.toFixed(2);
   return n.toFixed(1);
+}
+
+function _rpYears(histT, mult) {
+  /* Convert multiplier to future return period in years.
+     histT = historical return period (2, 5, 10)
+     mult = frequency multiplier (e.g. 1.9 means 1.9× more frequent)
+     future_RP = histT / mult */
+  if (mult == null || isNaN(mult)) return '—';
+  const m = parseFloat(mult);
+  if (m === 0) return 'no ocurre';
+  if (m < 0.01) return '>' + (histT * 100) + ' años';
+  const futRP = histT / m;
+  if (futRP >= 100) return '>' + Math.round(futRP) + ' años';
+  if (futRP >= 10) return Math.round(futRP) + ' años';
+  if (futRP >= 1) return futRP.toFixed(1) + ' años';
+  if (futRP >= 1/12) return Math.round(futRP * 12) + ' meses';
+  return Math.round(futRP * 365) + ' días';
 }
 
 function fmtPct(v) {
@@ -1176,9 +1192,13 @@ function buildPanelBody(props) {
   const rp1   = fmtRP(props[sc + 'rp_2yr']);
   const rp5   = fmtRP(props[sc + 'rp_5yr']);
   const rp10  = fmtRP(props[sc + 'rp_10yr']);
-  // Use 10yr pill value directly for summary text
+  // Use 10yr pill value directly for summary text — same style as cold
   const hwM10 = parseFloat(props[sc + 'rp_10yr']);
-  const multStr = (!isNaN(hwM10) && hwM10 > 0) ? hwM10.toFixed(1) + '×' : '—';
+  let multStr = '—';
+  if (!isNaN(hwM10) && hwM10 > 0) {
+    if (hwM10 <= 1.05) multStr = 'sin cambio';
+    else multStr = Math.round((hwM10 - 1) * 100) + '% más frecuente';
+  }
 
   // ---- Return periods (cold) ----
   const cwRp1   = fmtRP(props[sc + 'cw_rp_2yr']);
@@ -1235,20 +1255,20 @@ function buildPanelBody(props) {
         </div>
         <div class="rp-row">
           <div class="rp-pill" style="background:rgba(8,69,148,0.10);">
-            <strong style="color:#084594;">${cwRp1 === '—' ? 'desaparece' : cwRp1 + '×'}</strong>
-            2 años hist.
+            <strong style="color:#084594;">${_rpYears(2, props[sc + 'cw_rp_2yr'])}</strong>
+            era cada 2 años
           </div>
           <div class="rp-pill" style="background:rgba(8,69,148,0.10);">
-            <strong style="color:#084594;">${cwRp5 === '—' ? 'desaparece' : cwRp5 + '×'}</strong>
-            5 años hist.
+            <strong style="color:#084594;">${_rpYears(5, props[sc + 'cw_rp_5yr'])}</strong>
+            era cada 5 años
           </div>
           <div class="rp-pill" style="background:rgba(8,69,148,0.10);">
-            <strong style="color:#084594;">${cwRp10 === '—' ? 'desaparece' : cwRp10 + '×'}</strong>
-            10 años hist.
+            <strong style="color:#084594;">${_rpYears(10, props[sc + 'cw_rp_10yr'])}</strong>
+            era cada 10 años
           </div>
         </div>
         <div style="font-size:10px;color:var(--text-secondary);margin-top:8px;">
-          Multiplicador &lt;1 = menos frecuente en el futuro. "Desaparece" = evento ya no ocurre.
+          Valores = nuevo período de retorno en el futuro (más largo = menos frecuente).
         </div>
       </div>
 
@@ -1291,25 +1311,25 @@ function buildPanelBody(props) {
     <div class="section-heading">Período de retorno</div>
     <div id="return-period-box">
       <div id="return-period-text">
-        Un evento de calor histórico de <strong>10 años</strong>
-        ocurrirá ahora <strong>${multStr}</strong> más frecuentemente en el futuro.
+        Un evento de calor histórico de <strong>10 años</strong> en el futuro:
+        <strong>${multStr}</strong>.
       </div>
       <div class="rp-row">
         <div class="rp-pill">
-          <strong>${rp1}</strong>
-          2 años hist.
+          <strong>${_rpYears(2, props[sc + 'rp_2yr'])}</strong>
+          era cada 2 años
         </div>
         <div class="rp-pill">
-          <strong>${rp5}</strong>
-          5 años hist.
+          <strong>${_rpYears(5, props[sc + 'rp_5yr'])}</strong>
+          era cada 5 años
         </div>
         <div class="rp-pill">
-          <strong>${rp10}</strong>
-          10 años hist.
+          <strong>${_rpYears(10, props[sc + 'rp_10yr'])}</strong>
+          era cada 10 años
         </div>
       </div>
       <div style="font-size:10px;color:var(--text-secondary);margin-top:8px;">
-        Valores = multiplicador de frecuencia para cada evento histórico de referencia.
+        Valores = nuevo período de retorno en el futuro (más corto = más frecuente).
       </div>
     </div>
 
