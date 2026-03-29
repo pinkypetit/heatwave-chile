@@ -597,6 +597,12 @@
 
 <div id="metric-sidebar" class="glass">
   <div class="sidebar-label">Variable</div>
+  <!-- Temperature (always visible) -->
+  <label class="metric-option" data-event="all">
+    <input type="radio" name="metric" value="delta_tmax" />
+    ΔTmax (°C)
+  </label>
+  <div class="metric-sep"></div>
   <!-- Heat wave metrics -->
   <label class="metric-option" data-event="heat">
     <input type="radio" name="metric" value="hw_freq_change_pct" checked />
@@ -739,6 +745,14 @@ let selectedLayer     = null;
 // Metric configuration
 // ---------------------------------------------------------------
 const METRICS = {
+  // --- Temperature (always visible) ---
+  delta_tmax: {
+    label:   'Cambio Tmax media',
+    unit:    '°C',
+    domain:  [0, 5],
+    format:  v => (v >= 0 ? '+' : '') + v.toFixed(1) + '°C',
+    eventType: 'all',
+  },
   // --- Heat wave metrics ---
   hw_freq_change_pct: {
     label:   'Cambio en frecuencia',
@@ -2583,7 +2597,7 @@ document.querySelectorAll('.event-pill').forEach(btn => {
 
     // Show/hide metric options
     document.querySelectorAll('#metric-sidebar [data-event]').forEach(el => {
-      el.style.display = el.dataset.event === newType ? '' : 'none';
+      el.style.display = (el.dataset.event === newType || el.dataset.event === 'all') ? '' : 'none';
     });
 
     // Select the first metric of the new event type
