@@ -616,7 +616,7 @@
   </label>
   <div class="metric-sep" data-event="heat"></div>
   <label class="metric-option" data-event="heat">
-    <input type="radio" name="metric" value="return_period_multiplier" />
+    <input type="radio" name="metric" value="hw_rp_change_pct" />
     Período retorno ×
   </label>
   <!-- Cold wave metrics -->
@@ -639,7 +639,7 @@
   </label>
   <div class="metric-sep" data-event="cold" style="display:none;"></div>
   <label class="metric-option" data-event="cold" style="display:none;">
-    <input type="radio" name="metric" value="cw_return_period_multiplier" />
+    <input type="radio" name="metric" value="cw_rp_change_pct" />
     Período retorno ×
   </label>
 </div>
@@ -771,18 +771,11 @@ const METRICS = {
     isRatio: false,
     eventType: 'heat',
   },
-  return_period_multiplier: {
-    label:   'Período de retorno (10 años hist.)',
-    unit:    'años',
-    domain:  [-10, 10],
-    format:  v => {
-      // v is delta_years (10 - 10/mult); convert back to years for display
-      const years = 10 - v;
-      if (years <= 0 || !isFinite(years)) return 'N/A';
-      if (years < 1) return (years*12).toFixed(0) + ' meses';
-      return years.toFixed(1) + ' años';
-    },
-    isRatio: true,
+  hw_rp_change_pct: {
+    label:   'Período de retorno (cambio %)',
+    unit:    '%',
+    domain:  [0, 500],
+    format:  v => (v >= 0 ? '+' : '') + v.toFixed(0) + '%',
     eventType: 'heat',
   },
   // --- Cold wave metrics ---
@@ -818,17 +811,11 @@ const METRICS = {
     isRatio: false,
     eventType: 'cold',
   },
-  cw_return_period_multiplier: {
-    label:   'Período de retorno (10 años hist.)',
-    unit:    'años',
-    domain:  [-10, 10],
-    format:  v => {
-      const years = 10 - v;
-      if (years <= 0 || !isFinite(years)) return 'N/A';
-      if (years < 1) return (years*12).toFixed(0) + ' meses';
-      return years.toFixed(1) + ' años';
-    },
-    isRatio: true,
+  cw_rp_change_pct: {
+    label:   'Período de retorno (cambio %)',
+    unit:    '%',
+    domain:  [-100, 100],
+    format:  v => (v >= 0 ? '+' : '') + v.toFixed(0) + '%',
     eventType: 'cold',
   },
 };
@@ -886,29 +873,8 @@ function computeDomain(metric, scenario) {
   // For cold change metrics: values are negative (decrease).
   // For RP multipliers: centered at 1, but we shift to center at 0 for display.
 
-  if (METRICS[metric].isRatio) {
-    // RP: transform multiplier → delta_years = 10 - 10/mult
-    // Then make symmetric around 0
-    let rpVals = [];
-    scenarios.forEach(sc => {
-      const key = sc + '__' + metric;
-      COMMUNES_DATA.features.forEach(f => {
-        const v = f.properties[key];
-        if (v != null && !isNaN(v) && isFinite(v) && v > 0) {
-          rpVals.push(10 - 10 / v);  // delta_years
-        }
-      });
-    });
-    if (rpVals.length === 0) return [-5, 5];
-    rpVals.sort(d3.ascending);
-    const rpLo = d3.quantile(rpVals, 0.02);
-    const rpHi = d3.quantile(rpVals, 0.98);
-    const rpAbs = Math.max(Math.abs(rpLo), Math.abs(rpHi), 1);
-    return [-rpAbs, rpAbs];
-  }
-
-  // Percentage metrics: make symmetric around 0
-  const absMax = Math.max(Math.abs(lo), Math.abs(hi));
+  // All metrics are percentage change — make symmetric around 0
+  const absMax = Math.max(Math.abs(lo), Math.abs(hi), 1);
   return [-absMax, absMax];
 }
 
@@ -962,21 +928,9 @@ function renderLayer() {
     return currentScenario + '__' + metric;
   }
 
-  // Transform raw value for color mapping
-  function colorVal(raw) {
-    if (raw == null || isNaN(raw)) return raw;
-    // For RP metrics: transform multiplier → delta_years = 10 - 10/mult
-    if (metaCfg.isRatio) {
-      if (raw <= 0) return null;
-      return 10 - 10 / raw;
-    }
-    return raw;
-  }
-
   geojsonLayer = L.geoJSON(COMMUNES_DATA, {
     style: (feature) => {
-      const raw   = feature.properties[propKey(currentMetric)];
-      const val   = colorVal(raw);
+      const val   = feature.properties[propKey(currentMetric)];
       const fill  = getColor(val, colorScale);
       const isSelected = selectedLayer &&
         selectedLayer.feature.properties.nombre === feature.properties.nombre;
@@ -991,10 +945,9 @@ function renderLayer() {
       const props = feature.properties;
 
       layer.on('mouseover', function (e) {
-        const raw = props[propKey(currentMetric)];
-        const displayV = metaCfg.isRatio ? colorVal(raw) : raw;
-        const fmtVal = (displayV != null && !isNaN(displayV))
-          ? metaCfg.format(displayV)
+        const val = props[propKey(currentMetric)];
+        const fmtVal = (val != null && !isNaN(val))
+          ? metaCfg.format(val)
           : 'Sin datos';
 
         const tipColor = currentEventType === 'cold' ? '#6baed6' : '#fc9272';
@@ -1079,21 +1032,10 @@ function updateLegend(domain, metaCfg) {
   ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
 
-  const fmt = (v) => {
-    if (metaCfg.isRatio) {
-      // v is delta_years; convert to actual RP years
-      const years = 10 - v;
-      if (years < 1) return '<1 año';
-      if (years > 99) return '>99 años';
-      return Math.round(years) + ' años';
-    }
-    return (v >= 0 ? '+' : '') + Math.round(v) + '%';
-  };
+  const fmt = (v) => (v >= 0 ? '+' : '') + Math.round(v) + '%';
 
-  // Symmetric divergent: show min, center (0 or 10yr), max
-  // For RP: legend goes from "más frecuente" (red) to "menos frecuente" (blue)
   document.getElementById('tick-min').textContent = fmt(domain[0]);
-  document.getElementById('tick-mid').textContent = metaCfg.isRatio ? '10 años' : '0%';
+  document.getElementById('tick-mid').textContent = '0%';
   document.getElementById('tick-max').textContent = fmt(domain[1]);
 }
 
