@@ -856,7 +856,9 @@ function buildColorScale(domain) {
 function getColor(value, colorScale) {
   if (value == null || isNaN(value)) return '#cccccc';
   // For cold metrics: negate so that fewer cold (negative) → red, more cold (positive) → blue
-  const v = (currentEventType === 'cold') ? -value : value;
+  // Exception: delta_tmax is always positive=red (warming), no negation
+  const skipNegate = (currentMetric === 'delta_tmax');
+  const v = (currentEventType === 'cold' && !skipNegate) ? -value : value;
   return colorScale(v);
 }
 
@@ -1035,7 +1037,8 @@ function updateLegend(domain, metaCfg) {
   // so legend draws the DISPLAY domain (negated for cold)
   for (let i = 0; i < w; i++) {
     const rawV = domain[0] + (domain[1] - domain[0]) * i / w;
-    const mapV = (currentEventType === 'cold') ? -rawV : rawV;
+    const skipNeg = (currentMetric === 'delta_tmax');
+    const mapV = (currentEventType === 'cold' && !skipNeg) ? -rawV : rawV;
     ctx.fillStyle = colorScale(mapV);
     ctx.fillRect(i, 0, 1, h);
   }
