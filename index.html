@@ -2628,6 +2628,7 @@ document.querySelectorAll('.event-pill').forEach(btn => {
     });
 
     renderLayer();
+    if (selectedLayer) openPanel(selectedLayer.feature.properties);
   });
 });
 
