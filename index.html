@@ -1220,8 +1220,19 @@ function buildPanelBody(props) {
     else cwMultStr = cwM10.toFixed(1) + '× más frecuente';
   }
 
+  // ---- Temperature change ----
+  const deltaT = props[sc + 'delta_tmax'];
+  const deltaTStr = (deltaT != null && !isNaN(deltaT)) ? (deltaT >= 0 ? '+' : '') + parseFloat(deltaT).toFixed(1) + '°C' : '—';
+  const deltaTColor = (deltaT != null && deltaT >= 0) ? '#c0392b' : '#2166AC';
+  const deltaTHtml = `
+    <div style="text-align:center;padding:10px 0 6px;border-bottom:1px solid rgba(0,0,0,0.06);margin-bottom:10px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin-bottom:4px;">Cambio medio Tmax (2050–2080 vs 1980–2010)</div>
+      <div style="font-size:28px;font-weight:700;color:${deltaTColor};">${deltaTStr}</div>
+    </div>
+  `;
+
   if (isCold) {
-    return `
+    return deltaTHtml + `
       <div class="section-heading" style="color:#084594;">Olas de fr&iacute;o</div>
       <div class="metric-cards-row">
         <div class="metric-card">
@@ -1282,7 +1293,7 @@ function buildPanelBody(props) {
     `;
   }
 
-  return `
+  return deltaTHtml + `
     <div class="section-heading">Olas de calor</div>
     <div class="metric-cards-row">
       <div class="metric-card">
