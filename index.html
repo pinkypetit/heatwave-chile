@@ -2603,11 +2603,22 @@ document.querySelectorAll('.event-pill').forEach(btn => {
       el.style.display = (el.dataset.event === newType || el.dataset.event === 'all') ? '' : 'none';
     });
 
-    // Select the first metric of the new event type
-    const firstRadio = document.querySelector('#metric-sidebar [data-event="' + newType + '"] input[type="radio"]');
-    if (firstRadio) {
-      firstRadio.checked = true;
-      currentMetric = firstRadio.value;
+    // Try to keep the same metric category (e.g., freq→freq, duration→duration)
+    // Map: hw_X_change_pct ↔ cw_X_change_pct, hw_rp_change_pct ↔ cw_rp_change_pct
+    const base = currentMetric.replace(/^(hw_|cw_)/, '');
+    const targetMetric = (newType === 'cold' ? 'cw_' : 'hw_') + base;
+    const matchRadio = document.querySelector('#metric-sidebar input[value="' + targetMetric + '"]');
+    if (matchRadio) {
+      matchRadio.checked = true;
+      currentMetric = targetMetric;
+    } else if (currentMetric === 'delta_tmax') {
+      // delta_tmax is shared, keep it
+    } else {
+      const firstRadio = document.querySelector('#metric-sidebar [data-event="' + newType + '"] input[type="radio"]');
+      if (firstRadio) {
+        firstRadio.checked = true;
+        currentMetric = firstRadio.value;
+      }
     }
 
     // Update accent color for radio buttons
