@@ -651,8 +651,8 @@
     SSP3-7.0
   </label>
   <label class="scenario-option">
-    <input type="radio" name="scenario" value="ssp585" disabled />
-    SSP5-8.5 <span style="font-size:10px;color:var(--text-secondary);">(pronto)</span>
+    <input type="radio" name="scenario" value="ssp585" />
+    SSP5-8.5
   </label>
 </div>
 
@@ -1361,23 +1361,32 @@ function renderCommuneCharts(props) {
     return;
   }
 
-  // Build a view of the chart data based on current event type
-  // For cold: remap cw_* keys to the standard keys used by drawing functions
+  // Build a view of the chart data based on current scenario + event type.
+  // Chart keys are prefixed: {scenario}__sparkline, {scenario}__cw_sparkline, etc.
   const isCold = currentEventType === 'cold';
+  const scKey = currentScenario + '__';
   let cd;
   if (isCold) {
     cd = {
-      sparkline: cdRaw.cw_sparkline || [],
-      rr: cdRaw.cw_rr || {},
-      hist_mag_hist: cdRaw.cw_hist_mag_hist || [],
-      hist_mag_fut: cdRaw.cw_hist_mag_fut || [],
-      season_hist: cdRaw.cw_season_hist || [],
-      season_fut: cdRaw.cw_season_fut || [],
-      seasons: cdRaw.seasons,  // seasonality heatmap is shared
+      sparkline: cdRaw[scKey + 'cw_sparkline'] || [],
+      rr: cdRaw[scKey + 'cw_rr'] || {},
+      hist_mag_hist: cdRaw[scKey + 'cw_hist_mag_hist'] || [],
+      hist_mag_fut: cdRaw[scKey + 'cw_hist_mag_fut'] || [],
+      season_hist: cdRaw[scKey + 'cw_season_hist'] || [],
+      season_fut: cdRaw[scKey + 'cw_season_fut'] || [],
+      seasons: cdRaw[scKey + 'seasons'],
       _isCold: true,
     };
   } else {
-    cd = cdRaw;
+    cd = {
+      sparkline: cdRaw[scKey + 'sparkline'] || [],
+      rr: cdRaw[scKey + 'rr'] || {},
+      hist_mag_hist: cdRaw[scKey + 'hist_mag_hist'] || [],
+      hist_mag_fut: cdRaw[scKey + 'hist_mag_fut'] || [],
+      season_hist: cdRaw[scKey + 'season_hist'] || [],
+      season_fut: cdRaw[scKey + 'season_fut'] || [],
+      seasons: cdRaw[scKey + 'seasons'],
+    };
   }
   _currentCommuneCharts = { nombre, region, cd };
 
@@ -2531,6 +2540,10 @@ document.querySelectorAll('input[name="scenario"]').forEach(radio => {
   radio.addEventListener('change', function () {
     currentScenario = this.value;
     renderLayer();
+    // Refresh open panel with new scenario data
+    if (selectedLayer) {
+      openPanel(selectedLayer.feature.properties);
+    }
   });
 });
 
