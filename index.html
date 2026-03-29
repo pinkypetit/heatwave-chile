@@ -823,24 +823,20 @@ const METRICS = {
 };
 
 // ---------------------------------------------------------------
-// Color scale
+// Color scale — DIVERGENT, centered at 0, symmetric
+// Blue = more cold / less heat, Red = more heat / less cold
 // ---------------------------------------------------------------
-const HEAT_COLOR_STOPS = [
-  '#fff5f0', '#fdd5c0', '#fc9272', '#fb6a4a', '#de2d26', '#a50f15',
-];
-
-const COLD_COLOR_STOPS = [
-  '#f0f4ff', '#c6dbef', '#6baed6', '#3182bd', '#1560a8', '#084594',
+const DIV_STOPS = [
+  '#084594', '#2166AC', '#6baed6', '#c6dbef',  // blue (negative)
+  '#f7f7f7',                                     // white (zero)
+  '#fdd5c0', '#fc9272', '#de2d26', '#a50f15',  // red (positive)
 ];
 
 function buildColorScale(domain) {
-  const stops = currentEventType === 'cold' ? COLD_COLOR_STOPS : HEAT_COLOR_STOPS;
-  // Cold: domain is negative (e.g. -90% to 0%). We want darkest blue near 0 (less change)
-  // and lightest blue at most negative (biggest decrease = fewer cold waves = good).
-  // Default domain order works: [min, max] maps lightest→darkest.
+  // domain is always symmetric: [-absMax, +absMax]
   return d3.scaleSequential()
     .domain(domain)
-    .interpolator(d3.interpolateRgbBasis(stops))
+    .interpolator(d3.interpolateRgbBasis(DIV_STOPS))
     .clamp(true);
 }
 
@@ -850,25 +846,43 @@ function getColor(value, colorScale) {
 }
 
 // ---------------------------------------------------------------
-// Derive domain from data
+// Derive domain from BOTH scenarios — symmetric around 0
 // ---------------------------------------------------------------
 function computeDomain(metric, scenario) {
-  if (!COMMUNES_DATA || !COMMUNES_DATA.features) return [0, 1];
-  const key = scenario + '__' + metric;
-  const vals = COMMUNES_DATA.features
-    .map(f => f.properties[key])
-    .filter(v => v != null && !isNaN(v) && isFinite(v));
+  if (!COMMUNES_DATA || !COMMUNES_DATA.features) return [-1, 1];
 
-  if (vals.length === 0) return [0, 1];
+  // Collect values from BOTH scenarios for shared limits
+  const scenarios = ['ssp370', 'ssp585'];
+  let allVals = [];
+  scenarios.forEach(sc => {
+    const key = sc + '__' + metric;
+    COMMUNES_DATA.features.forEach(f => {
+      const v = f.properties[key];
+      if (v != null && !isNaN(v) && isFinite(v)) allVals.push(v);
+    });
+  });
 
-  const lo = d3.quantile(vals.sort(d3.ascending), 0.02);
-  const hi = d3.quantile(vals, 0.98);
+  if (allVals.length === 0) return [-1, 1];
 
-  // For cold wave percentage metrics (typically negative), keep full range
-  if (currentEventType === 'cold' && !METRICS[metric].isRatio) {
-    return [lo, hi];
+  allVals.sort(d3.ascending);
+  const lo = d3.quantile(allVals, 0.02);
+  const hi = d3.quantile(allVals, 0.98);
+
+  // For heat change metrics: values are positive (increase), but we want
+  // the scale centered at 0 so blue side represents hypothetical decrease.
+  // For cold change metrics: values are negative (decrease).
+  // For RP multipliers: centered at 1, but we shift to center at 0 for display.
+
+  if (METRICS[metric].isRatio) {
+    // RP multiplier: center at 1. Transform to log-like symmetric.
+    // Just use [0, maxVal] and center the divergent scale at 1
+    const absMax = Math.max(Math.abs(lo - 1), Math.abs(hi - 1));
+    return [1 - absMax, 1 + absMax];
   }
-  return [Math.max(0, lo), hi];
+
+  // Percentage metrics: make symmetric around 0
+  const absMax = Math.max(Math.abs(lo), Math.abs(hi));
+  return [-absMax, absMax];
 }
 
 // ---------------------------------------------------------------
@@ -1008,13 +1022,9 @@ function updateLegend(domain, metaCfg) {
   const colorScale = buildColorScale(domain);
 
   ctx.clearRect(0, 0, w, h);
-  // For the legend bar, we always draw left-to-right from lightest to darkest.
-  // For cold: domain[0] is max (lightest), domain[1] is min (darkest) after buildColorScale reversal.
-  // We sample the color scale at evenly spaced values from domain min to max.
-  const dMin = Math.min(domain[0], domain[1]);
-  const dMax = Math.max(domain[0], domain[1]);
+  // Divergent bar: domain[0] (blue) through center (white) to domain[1] (red)
   for (let i = 0; i < w; i++) {
-    ctx.fillStyle = colorScale(dMin + (dMax - dMin) * i / w);
+    ctx.fillStyle = colorScale(domain[0] + (domain[1] - domain[0]) * i / w);
     ctx.fillRect(i, 0, 1, h);
   }
 
@@ -1030,9 +1040,11 @@ function updateLegend(domain, metaCfg) {
     return (v >= 0 ? '+' : '') + Math.round(v) + '%';
   };
 
-  document.getElementById('tick-min').textContent = fmt(dMin);
-  document.getElementById('tick-mid').textContent = fmt((dMin + dMax) / 2);
-  document.getElementById('tick-max').textContent = fmt(dMax);
+  // Symmetric divergent: show min, 0 (center), max
+  const center = metaCfg.isRatio ? 1 : 0;
+  document.getElementById('tick-min').textContent = fmt(domain[0]);
+  document.getElementById('tick-mid').textContent = fmt(center);
+  document.getElementById('tick-max').textContent = fmt(domain[1]);
 }
 
 // ---------------------------------------------------------------
