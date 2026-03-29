@@ -1047,10 +1047,13 @@ function updateLegend(domain, metaCfg) {
   ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
 
-  const fmt = (v) => (v >= 0 ? '+' : '') + Math.round(v) + '%';
+  const isTemp = (currentMetric === 'delta_tmax');
+  const fmt = isTemp
+    ? (v) => (v >= 0 ? '+' : '') + v.toFixed(1) + '°C'
+    : (v) => (v >= 0 ? '+' : '') + Math.round(v) + '%';
 
   document.getElementById('tick-min').textContent = fmt(domain[0]);
-  document.getElementById('tick-mid').textContent = '0%';
+  document.getElementById('tick-mid').textContent = isTemp ? '0°C' : '0%';
   document.getElementById('tick-max').textContent = fmt(domain[1]);
 }
 
