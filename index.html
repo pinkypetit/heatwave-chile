@@ -842,7 +842,9 @@ function buildColorScale(domain) {
 
 function getColor(value, colorScale) {
   if (value == null || isNaN(value)) return '#cccccc';
-  return colorScale(value);
+  // For cold metrics: negate so that fewer cold (negative) → red, more cold (positive) → blue
+  const v = (currentEventType === 'cold') ? -value : value;
+  return colorScale(v);
 }
 
 // ---------------------------------------------------------------
@@ -1022,9 +1024,13 @@ function updateLegend(domain, metaCfg) {
   const colorScale = buildColorScale(domain);
 
   ctx.clearRect(0, 0, w, h);
-  // Divergent bar: domain[0] (blue) through center (white) to domain[1] (red)
+  // Divergent bar: blue (left) → white (center) → red (right)
+  // For cold: domain values are negative, but we negate in getColor,
+  // so legend draws the DISPLAY domain (negated for cold)
   for (let i = 0; i < w; i++) {
-    ctx.fillStyle = colorScale(domain[0] + (domain[1] - domain[0]) * i / w);
+    const rawV = domain[0] + (domain[1] - domain[0]) * i / w;
+    const mapV = (currentEventType === 'cold') ? -rawV : rawV;
+    ctx.fillStyle = colorScale(mapV);
     ctx.fillRect(i, 0, 1, h);
   }
 
