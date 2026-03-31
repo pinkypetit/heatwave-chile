@@ -1241,7 +1241,7 @@ function buildPanelBody(props) {
   }
 
   // ---- Temperature change ----
-  const deltaT = props[sc + 'delta_tmax'];
+  const deltaT = props[sc + '__delta_tmax'];
   const deltaTStr = (deltaT != null && !isNaN(deltaT)) ? (deltaT >= 0 ? '+' : '') + parseFloat(deltaT).toFixed(1) + '°C' : '—';
   const deltaTColor = (deltaT != null && deltaT >= 0) ? '#c0392b' : '#2166AC';
   const deltaTHtml = `
